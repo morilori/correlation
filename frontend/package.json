@@ -10,10 +10,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "cytoscape": "^3.32.0",
-    "katex": "^0.16.22",
-    "neo4j-driver": "^5.28.1",
-    "neovis.js": "^2.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

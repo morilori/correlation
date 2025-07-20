@@ -9,9 +9,24 @@ interface AttentionHeatmapProps {
   setSelectedTokenIndices?: (indices: number[]) => void; // setter
   unknownTokenIndices?: number[]; // indices of words marked as unknown
   knownTokenIndices?: number[]; // indices of words marked as known
+  setUnknownTokenIndices?: (indices: number[]) => void; // setter for unknown words
+  setKnownTokenIndices?: (indices: number[]) => void; // setter for known words
+  punctuationIndices?: number[]; // indices of punctuation words
+  includePunctuationInCalculations?: boolean; // whether punctuation is included in calculations
 }
 
-const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, selectedTokenIndices = [], setSelectedTokenIndices, unknownTokenIndices = [], knownTokenIndices = [] }) => {
+const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
+  words, 
+  attention, 
+  selectedTokenIndices = [], 
+  setSelectedTokenIndices, 
+  unknownTokenIndices = [], 
+  knownTokenIndices = [],
+  setUnknownTokenIndices,
+  setKnownTokenIndices,
+  punctuationIndices = [],
+  includePunctuationInCalculations = true
+}) => {
   const displayWords = words;
   // Adapt attention: unknown words only receive, not provide
   // Also, recalculate norm scores based on this modified attention
@@ -95,6 +110,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
   // The thresholds will be computed from the current metric distribution
   const [upperThreshold, setUpperThreshold] = useState(0.6); // computed, not user-editable
   const [lowerThreshold, setLowerThreshold] = useState(0.4); // computed, not user-editable
+  
+  // Band expansion state
+  const [expandedBands, setExpandedBands] = useState<{[key: string]: boolean}>({
+    lower: false,
+    middle: false, 
+    upper: false
+  });
 
   // Use unique ids for each word position
   const wordObjs = displayWords.map((word, idx) => ({ word, index: idx }));
@@ -113,23 +135,23 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
     isKnown: knownTokenIndices.includes(index),
   }));
   // Sorting logic: sort metrics, do not recalculate
-  const scoreboard = [...metrics];
+  // Filter out punctuation from scoreboard when not included in calculations
+  const filteredMetrics = metrics.filter((_, i) => 
+    !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+  );
+  const scoreboard = [...filteredMetrics];
   if (scoreSortMetric === 'original') {
     scoreboard.sort((a, b) => a.index - b.index);
   } else {
     scoreboard.sort((a, b) => a[scoreSortMetric] - b[scoreSortMetric]);
   }
 
-  // Text score: average (mean) of normSum for all words
-  const textScore = metrics.length > 0 ? metrics.reduce((sum, m) => sum + m.normSum, 0) / metrics.length : 0;
-
-  // Reorder words for table display
-  const sortedWords = scoreboard.map(s => s.word);
+  // Text score: average (mean) of normSum for all words (excluding punctuation when not included)
+  const textScore = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.normSum, 0) / filteredMetrics.length : 0;
 
   // Suggestion: find the words with the lowest normalized difference
   // const worstDescribed = scoreboard.slice(-3).map(s => s.word); // bottom 3
 
-  const [scoreboardLimit, setScoreboardLimit] = useState(10);
   const [selectedWordIdx, setSelectedWordIdx] = useState<number | null>(null);
   const [selectedWordIdx2, setSelectedWordIdx2] = useState<number | null>(null); // NEW: second word
 
@@ -403,11 +425,18 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
               const ROWS_PER_LINE = 3;
               const LINE_GAP_EM = 4;
               let valueForBand = originalTextColorArr[i];
-              let verticalPosition = 1;
-              if (valueForBand > upperThreshold) {
-                verticalPosition = 0;
-              } else if (valueForBand < lowerThreshold) {
-                verticalPosition = 2;
+              let verticalPosition = 1; // Default to middle band
+              
+              // Special handling for punctuation when not included in calculations
+              if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
+                verticalPosition = 1; // Force punctuation to middle band position
+              } else {
+                // Normal position determination based on score
+                if (valueForBand > upperThreshold) {
+                  verticalPosition = 0;
+                } else if (valueForBand < lowerThreshold) {
+                  verticalPosition = 2;
+                }
               }
               const wordWidths = metrics.map(met => (met.word.length * 9) + 14);
               const boxGap = 8;
@@ -428,8 +457,15 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
               const topEm = verticalPosition * BAND_HEIGHT_EM + lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
               // Determine band for coloring
               let band: 'above' | 'between' | 'below' = 'between';
-              if (valueForBand > upperThreshold) band = 'above';
-              else if (valueForBand < lowerThreshold) band = 'below';
+              
+              // Special handling for punctuation when not included in calculations
+              if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
+                band = 'between'; // Force punctuation to middle band
+              } else {
+                // Normal band determination based on score
+                if (valueForBand > upperThreshold) band = 'above';
+                else if (valueForBand < lowerThreshold) band = 'below';
+              }
               return (
                 <span
                   key={m.index}
@@ -437,9 +473,11 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
                     position: 'absolute',
                     left: `${estimatedLeftOffset}px`,
                     top: `${topEm}em`,
-                    background: colorByBand
-                      ? bandColors[band]
-                      : originalTextColorScale(originalTextColorArr[i]),
+                    background: (punctuationIndices.includes(i) && !includePunctuationInCalculations)
+                      ? '#e0e0e0' // Grey background for punctuation when not included in calculations
+                      : colorByBand
+                        ? bandColors[band]
+                        : originalTextColorScale(originalTextColorArr[i]),
                     color: m.isUnknown ? '#b00' : '#000',
                     borderRadius: 4,
                     width: `${wordWidths[i]}px`,
@@ -605,43 +643,155 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ words, attention, s
           </table>
         </div>
       )}
-      {/* Scoreboard Table: Use full width */}
+      {/* Scoreboard Table: Split by bands with unknown/known marking */}
       <div style={{ width: '100%' }}>
-        <b>Scoreboard: Left, Right, Provided, Received</b>
-        <button
-          style={{marginLeft: 12, fontSize: 13, padding: '2px 8px'}}
-          onClick={() => setScoreboardLimit(l => l === sortedWords.length ? 10 : sortedWords.length)}
-        >
-          {scoreboardLimit === sortedWords.length ? 'Show less' : 'Show all'}
-        </button>
-        <table style={{marginTop: 6, borderCollapse: 'collapse', fontSize: '0.98em', width: '100%'}}>
-          <thead>
-            <tr>
-              <th style={{textAlign: 'left', padding: '2px 8px'}}>Word</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Total Left</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Total Right</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Total Received</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Total Provided</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Norm. Received</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Norm. Provided</th>
-              <th style={{textAlign: 'right', padding: '2px 8px'}}>Norm. Sum</th>
-            </tr>
-          </thead>
-          <tbody>
-            {scoreboard.slice(0, scoreboardLimit).map(({ word, left, right, received, provided, normProvided, normReceived, index }) => (
-              <tr key={index}>
-                <td style={{padding: '2px 8px'}}>{word}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{left.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{right.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{received.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{provided.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{normReceived.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{normProvided.toFixed(3)}</td>
-                <td style={{padding: '2px 8px', textAlign: 'right'}}>{(normProvided + normReceived).toFixed(3)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <b>Scoreboard: Normalized Scores by Attention Bands</b>
+        
+        {/* Helper function to determine band for a word */}
+        {(() => {
+          // Get the same metric values that were used to calculate thresholds
+          const getMetricValueForBanding = (item: typeof scoreboard[0]) => {
+            const index = item.index;
+            // Use the same logic as originalTextColorArr
+            return metrics[index][scoreSortMetric === 'original' ? 'provided' : scoreSortMetric];
+          };
+
+          const upperBandWords = scoreboard.filter(item => {
+            const value = getMetricValueForBanding(item);
+            return value >= upperThreshold;
+          });
+          const middleBandWords = scoreboard.filter(item => {
+            const value = getMetricValueForBanding(item);
+            return value > lowerThreshold && value < upperThreshold;
+          });
+          const lowerBandWords = scoreboard.filter(item => {
+            const value = getMetricValueForBanding(item);
+            return value <= lowerThreshold;
+          });
+
+          const renderBandTable = (bandWords: typeof scoreboard, bandName: string, bandColor: string, bandKey: string) => {
+            if (bandWords.length === 0) return null;
+            
+            const isExpanded = expandedBands[bandKey];
+            const defaultLimit = 5; // Show 5 words by default
+            const displayWords = isExpanded ? bandWords : bandWords.slice(0, defaultLimit);
+            const hasMore = bandWords.length > defaultLimit;
+            
+            return (
+              <div key={bandName} style={{ marginBottom: 20 }}>
+                <h4 style={{ 
+                  margin: '12px 0 6px 0', 
+                  padding: '6px 12px', 
+                  backgroundColor: bandColor, 
+                  borderRadius: '4px',
+                  fontSize: '0.9em',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>{bandName} Attention Band ({bandWords.length} words)</span>
+                  {hasMore && (
+                    <button
+                      onClick={() => setExpandedBands(prev => ({
+                        ...prev,
+                        [bandKey]: !prev[bandKey]
+                      }))}
+                      style={{
+                        fontSize: '12px',
+                        padding: '2px 6px',
+                        backgroundColor: 'rgba(0,0,0,0.1)',
+                        border: '1px solid rgba(0,0,0,0.2)',
+                        borderRadius: '3px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {isExpanded ? `Show less (${defaultLimit})` : `Show all (${bandWords.length})`}
+                    </button>
+                  )}
+                </h4>
+                <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`}}>
+                  <thead>
+                    <tr style={{ backgroundColor: bandColor }}>
+                      <th style={{textAlign: 'left', padding: '4px 8px'}}>Word</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Received</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Provided</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Sum</th>
+                      <th style={{textAlign: 'center', padding: '4px 8px'}}>Mark As</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayWords.map(({ word, normProvided, normReceived, index }) => (
+                      <tr key={index}>
+                        <td style={{padding: '4px 8px', fontWeight: 500}}>{word}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{(normProvided + normReceived).toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'center'}}>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button
+                              onClick={() => {
+                                if (!setUnknownTokenIndices || !setKnownTokenIndices) return;
+                                if (unknownTokenIndices.includes(index)) {
+                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== index));
+                                } else {
+                                  setUnknownTokenIndices([...unknownTokenIndices.filter(i => i !== index), index]);
+                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== index));
+                                }
+                              }}
+                              style={{
+                                padding: '2px 6px',
+                                fontSize: '11px',
+                                backgroundColor: unknownTokenIndices.includes(index) ? '#ffcccc' : '#f8f8f8',
+                                border: unknownTokenIndices.includes(index) ? '1px solid #ff6666' : '1px solid #ddd',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontWeight: unknownTokenIndices.includes(index) ? 'bold' : 'normal'
+                              }}
+                              title="Mark as unknown word"
+                            >
+                              ?
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (!setKnownTokenIndices || !setUnknownTokenIndices) return;
+                                if (knownTokenIndices.includes(index)) {
+                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== index));
+                                } else {
+                                  setKnownTokenIndices([...knownTokenIndices.filter(i => i !== index), index]);
+                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== index));
+                                }
+                              }}
+                              style={{
+                                padding: '2px 6px',
+                                fontSize: '11px',
+                                backgroundColor: knownTokenIndices.includes(index) ? '#ccffcc' : '#f8f8f8',
+                                border: knownTokenIndices.includes(index) ? '1px solid #66ff66' : '1px solid #ddd',
+                                borderRadius: '3px',
+                                cursor: 'pointer',
+                                fontWeight: knownTokenIndices.includes(index) ? 'bold' : 'normal'
+                              }}
+                              title="Mark as known word"
+                            >
+                              ✓
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          };
+
+          return (
+            <div style={{ marginTop: 12 }}>
+              {renderBandTable(lowerBandWords, 'Lower', bandColors.below, 'lower')}
+              {renderBandTable(middleBandWords, 'Middle', bandColors.between, 'middle')}
+              {renderBandTable(upperBandWords, 'Upper', bandColors.above, 'upper')}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

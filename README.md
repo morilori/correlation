@@ -8,11 +8,10 @@ A clean, interactive web application for visualizing BERT attention patterns. Th
 - **Interactive Heatmap**: Click on words to explore attention relationships
 - **Multiple Metrics**: View provided/received attention, directional attention (left/right)
 - **Text Grouping**: Handle long texts by processing them in sentence groups
-- **Filtering Options**: 
-  - Include/exclude punctuation
-  - Include/exclude self-attention
-  - Ignore immediate neighbors
-  - Combine word pieces
+- **Interactive Features**:
+  - Multiple word selection with visual highlighting
+  - Attention score filtering and normalization
+  - Exclude punctuation from calculations (always displayed)
 - **Word Marking**: Mark words as known/unknown to analyze comprehension patterns
 
 ## 🏗️ Architecture
@@ -128,10 +127,9 @@ Analyzes text and returns BERT attention data.
 
 The application supports various filtering and display options:
 
-- **Punctuation Filtering**: Remove punctuation tokens from analysis
-- **Self-Attention**: Include or exclude diagonal attention values
-- **Neighbor Filtering**: Ignore attention to immediate adjacent words
-- **Word Piece Combination**: Merge BERT subword tokens
+- **Punctuation Filtering**: Exclude punctuation from attention calculations (punctuation is always displayed)
+
+*Note: Self-attention (diagonal values), immediate neighbors, and word piece combination are always included in score calculations.*
 
 ## 🤝 Contributing
 

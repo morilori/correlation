@@ -194,7 +194,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   }
 
   // Always display original text in original order, colored by the current metric or selection
-  const originalTextColorArr = customColorArr || metrics.map(m => m[scoreSortMetric === 'original' ? 'provided' : scoreSortMetric]);
+  const originalTextColorArr = customColorArr || metrics.map(m => {
+    if (scoreSortMetric === 'original') return m.normProvided;
+    if (scoreSortMetric === 'received') return m.normReceived;
+    if (scoreSortMetric === 'provided') return m.normProvided;
+    if (scoreSortMetric === 'normSum') return m.normSum;
+    return m[scoreSortMetric]; // for 'left' and 'right'
+  });
   const originalTextColorScale = getColorScale(originalTextColorArr);
 
   // Option to color by band
@@ -270,8 +276,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               <option value="original">Norm. Sum (default)</option>
               <option value="left">Total Left</option>
               <option value="right">Total Right</option>
-              <option value="received">Total Received</option>
-              <option value="provided">Total Provided</option>
+              <option value="received">Norm. Received</option>
+              <option value="provided">Norm. Provided</option>
               <option value="normSum">Norm. Sum</option>
             </select>
           </div>
@@ -516,9 +522,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                           ? ` | Attention received from selected: ${customColorArr ? customColorArr[i].toFixed(3) : ''}`
                           : ` | Attention given to selected: ${customColorArr ? customColorArr[i].toFixed(3) : ''}`
                       : scoreSortMetric === 'provided'
-                        ? ` | Attention provided: ${metrics[i].provided.toFixed(3)}`
+                        ? ` | Norm. provided: ${metrics[i].normProvided.toFixed(3)}`
                         : scoreSortMetric === 'received'
-                          ? ` | Attention received: ${metrics[i].received.toFixed(3)}`
+                          ? ` | Norm. received: ${metrics[i].normReceived.toFixed(3)}`
                           : '')
                   }
                 >
@@ -606,24 +612,24 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     </button>
                   )}
                 </h4>
-                <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`}}>
+                <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`, tableLayout: 'fixed'}}>
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
-                      <th style={{textAlign: 'left', padding: '4px 8px'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Received</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Provided</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px'}}>Norm. Sum</th>
-                      <th style={{textAlign: 'center', padding: '4px 8px'}}>Mark As</th>
+                      <th style={{textAlign: 'left', padding: '4px 8px', width: '25%'}}>Word</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Received</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Provided</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Sum</th>
+                      <th style={{textAlign: 'center', padding: '4px 8px', width: '15%'}}>Mark As</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayWords.map(({ word, normProvided, normReceived, index }) => (
                       <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left'}}>{word}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{normReceived.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right'}}>{(normProvided + normReceived).toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'center'}}>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '25%', wordWrap: 'break-word'}}>{word}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{(normProvided + normReceived).toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'center', width: '15%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button
                               onClick={() => {

@@ -220,11 +220,15 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     return sorted[idx];
   }
   useEffect(() => {
-    // Compute thresholds from current color metric
-    setUpperThreshold(computePercentile(originalTextColorArr, upperBandPercent));
-    setLowerThreshold(computeLowerPercentile(originalTextColorArr, lowerBandPercent));
+    // Create filtered color array that matches scoreboard filtering
+    const filteredColorArr = originalTextColorArr.filter((_, i) => 
+      !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+    );
+    // Compute thresholds from filtered color metric to match scoreboard
+    setUpperThreshold(computePercentile(filteredColorArr, upperBandPercent));
+    setLowerThreshold(computeLowerPercentile(filteredColorArr, lowerBandPercent));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originalTextColorArr, upperBandPercent, lowerBandPercent]);
+  }, [originalTextColorArr, upperBandPercent, lowerBandPercent, punctuationIndices, includePunctuationInCalculations]);
 
   // State to show/hide the Word Attention Heatmap
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
@@ -403,10 +407,20 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
                 verticalPosition = 1; // Force punctuation to middle band position
               } else {
-                // Normal position determination based on score
-                if (valueForBand > upperThreshold) {
+                // For non-punctuation words, use the value from the filtered array for band determination
+                const filteredColorArr = originalTextColorArr.filter((_, idx) => 
+                  !(punctuationIndices.includes(idx) && !includePunctuationInCalculations)
+                );
+                const filteredIndex = originalTextColorArr.slice(0, i + 1)
+                  .filter((_, idx) => !(punctuationIndices.includes(idx) && !includePunctuationInCalculations))
+                  .length - 1;
+                
+                const filteredValue = filteredColorArr[filteredIndex];
+                
+                // Normal position determination based on filtered value and thresholds
+                if (filteredValue >= upperThreshold) {
                   verticalPosition = 0;
-                } else if (valueForBand < lowerThreshold) {
+                } else if (filteredValue <= lowerThreshold) {
                   verticalPosition = 2;
                 }
               }
@@ -434,9 +448,19 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
                 band = 'between'; // Force punctuation to middle band
               } else {
-                // Normal band determination based on score
-                if (valueForBand > upperThreshold) band = 'above';
-                else if (valueForBand < lowerThreshold) band = 'below';
+                // For non-punctuation words, use the same filtered array logic as positioning
+                const filteredColorArr = originalTextColorArr.filter((_, idx) => 
+                  !(punctuationIndices.includes(idx) && !includePunctuationInCalculations)
+                );
+                const filteredIndex = originalTextColorArr.slice(0, i + 1)
+                  .filter((_, idx) => !(punctuationIndices.includes(idx) && !includePunctuationInCalculations))
+                  .length - 1;
+                
+                const filteredValue = filteredColorArr[filteredIndex];
+                
+                // Normal band determination based on filtered value and thresholds
+                if (filteredValue >= upperThreshold) band = 'above';
+                else if (filteredValue <= lowerThreshold) band = 'below';
               }
               return (
                 <span
@@ -512,11 +536,21 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         
         {/* Helper function to determine band for a word */}
         {(() => {
+          // Create the same filtered data that was used for threshold calculation
+          const filteredColorArr = originalTextColorArr.filter((_, i) => 
+            !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+          );
+          
           // Get the same metric values that were used to calculate thresholds
           const getMetricValueForBanding = (item: typeof scoreboard[0]) => {
             const index = item.index;
-            // Use the same logic as originalTextColorArr
-            return metrics[index][scoreSortMetric === 'original' ? 'provided' : scoreSortMetric];
+            // Find the position of this word in the filtered array
+            const filteredIndex = originalTextColorArr.slice(0, index + 1)
+              .filter((_, i) => !(punctuationIndices.includes(i) && !includePunctuationInCalculations))
+              .length - 1;
+            
+            // Use the value from the same filtered array used for thresholds
+            return filteredColorArr[filteredIndex];
           };
 
           const upperBandWords = scoreboard.filter(item => {

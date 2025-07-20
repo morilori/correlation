@@ -152,8 +152,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // Suggestion: find the words with the lowest normalized difference
   // const worstDescribed = scoreboard.slice(-3).map(s => s.word); // bottom 3
 
-  const [selectedWordIdx, setSelectedWordIdx] = useState<number | null>(null);
-  const [selectedWordIdx2, setSelectedWordIdx2] = useState<number | null>(null); // NEW: second word
+  // Removed selectedWordIdx and selectedWordIdx2 (pick word functionality removed)
 
   // Color scale for score highlighting
   function getColorScale(arr: number[]) {
@@ -257,49 +256,22 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   return (
     <div style={{ overflowX: 'auto', margin: '1em 0' }}>
-      {/* Text score display */}
-      <div style={{marginBottom: 16, fontSize: '1.1em', color: '#333'}}>
-        <b>Text Score (mean norm sum per word):</b> {textScore.toFixed(3)}
-      </div>
-      {/* Word Attention Heatmap toggle and display at the top */}
-      <div style={{marginBottom: 16}}>
-        <button onClick={() => setShowWordHeatmap(v => !v)} style={{fontSize: 14, padding: '4px 12px'}}>
-          {showWordHeatmap ? 'Hide' : 'Show'} Word Attention Heatmap
-        </button>
-        {showWordHeatmap && (
-          <div style={{marginTop: 16}}>
-            <b>Word Attention Heatmap (red = low, white = high):</b>
-            <table style={{ borderCollapse: 'collapse', marginTop: 8 }}>
-              <thead>
-                <tr>
-                  <th></th>
-                  {displayWords.map((w, i) => (
-                    <th key={i} style={{ writingMode: 'vertical-rl', fontSize: '0.9em', padding: '2px 4px' }}>{w}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {displayAttention.map((row, i) => (
-                  <tr key={i}>
-                    <th style={{ textAlign: 'right', fontSize: '0.9em', padding: '2px 4px' }}>{displayWords[i]}</th>
-                    {row.map((val, j) => (
-                      <td key={j} style={{ background: getRedWhiteColor(val, attMin, attMax), width: 24, height: 24, textAlign: 'center', fontSize: '0.8em' }}>
-                        {val.toFixed(2)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div style={{ fontSize: '0.8em', marginTop: 4 }}>
-              Each cell shows how much the column word attends to the row word.
-            </div>
-          </div>
-        )}
-      </div>
       {/* Move original text display above the line graph */}
       <div style={{margin: '16px 0', fontSize: '1.1em', lineHeight: 1.7}}>
-        <b>Original Text{selectedTokenIndices && selectedTokenIndices.length > 0 ? ' (colored by ' + customColorLabel + ')' : ' (colored by ' + (scoreSortMetric === 'original' ? 'provided' : scoreSortMetric) + ')'}:</b>
+        <div style={{display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8}}>
+          <b>Original Text{selectedTokenIndices && selectedTokenIndices.length > 0 ? ' (colored by ' + customColorLabel + ')' : ' (colored by ' + (scoreSortMetric === 'original' ? 'provided' : scoreSortMetric) + ')'}:</b>
+          <div style={{fontSize: '0.8em'}}>
+            <label style={{marginRight: 8}}>Sort by:</label>
+            <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'original' | 'left' | 'right' | 'received' | 'provided' | 'normSum')} style={{fontSize: 13, padding: '2px 6px'}}>
+              <option value="original">Norm. Sum (default)</option>
+              <option value="left">Total Left</option>
+              <option value="right">Total Right</option>
+              <option value="received">Total Received</option>
+              <option value="provided">Total Provided</option>
+              <option value="normSum">Norm. Sum</option>
+            </select>
+          </div>
+        </div>
         
         {/* Percent-based band controls and color by band toggle */}
         <div style={{margin: '8px 0', fontSize: '0.9em', display: 'flex', alignItems: 'center', gap: 16}}>
@@ -534,118 +506,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         </div>
         {/* Removed ScoreLineGraph component */}
       </div>
-      {/* Line Graph: Provided, Received, Left, and Right */}
-      <div style={{margin: '16px 0', fontSize: '1em'}}>
-        <b>Line Graph: Provided, Received, Left, and Right</b>
-        <div style={{margin: '8px 0 8px 0'}}>
-          <label style={{fontSize: 13, marginRight: 8}}>Sort by:</label>
-          <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'original' | 'left' | 'right' | 'received' | 'provided' | 'normSum')} style={{fontSize: 13, padding: '2px 6px'}}>
-            <option value="original">Original Order</option>
-            <option value="left">Total Left</option>
-            <option value="right">Total Right</option>
-            <option value="received">Total Received</option>
-            <option value="provided">Total Provided</option>
-            <option value="normSum">Norm. Sum</option>
-          </select>
-          <span style={{marginLeft: 24, fontSize: 13}}>Pick word 1:</span>
-          <select
-            value={selectedWordIdx === null ? '' : selectedWordIdx}
-            onChange={e => setSelectedWordIdx(e.target.value === '' ? null : Number(e.target.value))}
-            style={{fontSize: 13, padding: '2px 6px', marginLeft: 6}}
-          >
-            <option value="">(none)</option>
-            {scoreboard.map((s) => (
-              <option key={s.index} value={s.index}>{s.word} (#{s.index + 1})</option>
-            ))}
-          </select>
-          <span style={{marginLeft: 12, fontSize: 13}}>Pick word 2:</span>
-          <select
-            value={selectedWordIdx2 === null ? '' : selectedWordIdx2}
-            onChange={e => setSelectedWordIdx2(e.target.value === '' ? null : Number(e.target.value))}
-            style={{fontSize: 13, padding: '2px 6px', marginLeft: 6}}
-          >
-            <option value="">(none)</option>
-            {scoreboard.map((s) => (
-              <option key={s.index} value={s.index}>{s.word} (#{s.index + 1})</option>
-            ))}
-          </select>
-        </div>
-        {/* Removed ScoreLineGraph component */}
-        {selectedWordIdx !== null && (
-          <div style={{marginTop: 24}}>
-            <b>Attention for "{metrics[selectedWordIdx].word}" (position #{selectedWordIdx + 1}):</b>
-            {/* Removed ScoreLineGraph component */}
-            <div style={{fontSize: 13, marginTop: 4}}>
-              Selected word: {metrics[selectedWordIdx].word}
-            </div>
-          </div>
-        )}
-        {/* NEW: Compare two words' provided/received scores */}
-        {selectedWordIdx !== null && selectedWordIdx2 !== null && selectedWordIdx !== selectedWordIdx2 && (
-          <div style={{marginTop: 24}}>
-            <b>Compare: "{metrics[selectedWordIdx].word}" vs "{metrics[selectedWordIdx2].word}" (provided & received)</b>
-            {/* Removed ScoreLineGraph component */}
-          </div>
-        )}
-      </div>
-      {/* Attention Score Formulas Toggle */}
-      <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
-        <button onClick={() => setShowFormulas(v => !v)} style={{marginBottom: 8}}>
-          {showFormulas ? 'Hide' : 'Show'} Attention Score Formulas
-        </button>
-      </div>
-      {showFormulas && (
-        <div style={{margin: '0 auto 24px auto', width: '100%'}}>
-          <table style={{
-            margin: '0 auto',
-            borderCollapse: 'collapse',
-            fontSize: '1em',
-            width: '100%',
-            background: '#f8f8f8',
-            borderRadius: 8,
-            boxSizing: 'border-box',
-            padding: 0
-          }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', padding: '6px 12px', width: '18%' }}>Score</th>
-                <th style={{ textAlign: 'left', padding: '6px 12px', width: '32%' }}>Formula</th>
-                <th style={{ textAlign: 'left', padding: '6px 12px' }}>Explanation</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Provided</b> (for word <i>j</i>)</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_provided_j = Σ(k=1 to N) A_jk</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of row <i>j</i> in the heatmap. How much attention word <b>j</b> gives to all words (including itself).</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Received</b> (for word <i>i</i>)</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_received_i = Σ(k=1 to N) A_ki</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of column <i>i</i> in the heatmap. How much attention word <b>i</b> receives from all words.</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Left</b> (for word <i>i</i>)</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_left_i = Σ(j=1 to i-1) A_ij</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Attention word <b>i</b> gives to words to its left (lower column indices).</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Right</b> (for word <i>i</i>)</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_right_i = Σ(j=i+1 to N) A_ij</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Attention word <b>i</b> gives to words to its right (higher column indices).</td>
-              </tr>
-              <tr>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Heatmap</b> <i>A<sub>ij</sub></i></td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>A_ij = Σ(l=1 to L) Σ(h=1 to H) Attention^(l,h)_ij</td>
-                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of attention from word <b>j</b> to word <b>i</b> over all layers <i>L</i> and heads <i>H</i> (matrix cell in the heatmap).</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
       {/* Scoreboard Table: Split by bands with unknown/known marking */}
       <div style={{ width: '100%' }}>
-        <b>Scoreboard: Normalized Scores by Attention Bands</b>
+        <b>Scoreboard: Normalized Scores by Attention Bands | Text Score (mean norm sum per word): {textScore.toFixed(3)}</b>
         
         {/* Helper function to determine band for a word */}
         {(() => {
@@ -722,7 +585,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <tbody>
                     {displayWords.map(({ word, normProvided, normReceived, index }) => (
                       <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500}}>{word}</td>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left'}}>{word}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right'}}>{normReceived.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right'}}>{normProvided.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right'}}>{(normProvided + normReceived).toFixed(3)}</td>
@@ -793,6 +656,99 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           );
         })()}
       </div>
+
+      {/* Word Attention Heatmap toggle and display moved to bottom */}
+      <div style={{marginTop: 32, marginBottom: 16}}>
+        <button onClick={() => setShowWordHeatmap(v => !v)} style={{fontSize: 14, padding: '4px 12px'}}>
+          {showWordHeatmap ? 'Hide' : 'Show'} Word Attention Heatmap
+        </button>
+        {showWordHeatmap && (
+          <div style={{marginTop: 16}}>
+            <b>Word Attention Heatmap (red = low, white = high):</b>
+            <table style={{ borderCollapse: 'collapse', marginTop: 8 }}>
+              <thead>
+                <tr>
+                  <th></th>
+                  {displayWords.map((w, i) => (
+                    <th key={i} style={{ writingMode: 'vertical-rl', fontSize: '0.9em', padding: '2px 4px' }}>{w}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayAttention.map((row, i) => (
+                  <tr key={i}>
+                    <th style={{ textAlign: 'right', fontSize: '0.9em', padding: '2px 4px' }}>{displayWords[i]}</th>
+                    {row.map((val, j) => (
+                      <td key={j} style={{ background: getRedWhiteColor(val, attMin, attMax), width: 24, height: 24, textAlign: 'center', fontSize: '0.8em' }}>
+                        {val.toFixed(2)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontSize: '0.8em', marginTop: 4 }}>
+              Each cell shows how much the column word attends to the row word.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Attention Score Formulas Toggle moved to bottom */}
+      <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
+        <button onClick={() => setShowFormulas(v => !v)} style={{marginBottom: 8}}>
+          {showFormulas ? 'Hide' : 'Show'} Attention Score Formulas
+        </button>
+      </div>
+      {showFormulas && (
+        <div style={{margin: '0 auto 24px auto', width: '100%'}}>
+          <table style={{
+            margin: '0 auto',
+            borderCollapse: 'collapse',
+            fontSize: '1em',
+            width: '100%',
+            background: '#f8f8f8',
+            borderRadius: 8,
+            boxSizing: 'border-box',
+            padding: 0
+          }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '6px 12px', width: '18%' }}>Score</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px', width: '32%' }}>Formula</th>
+                <th style={{ textAlign: 'left', padding: '6px 12px' }}>Explanation</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Provided</b> (for word <i>j</i>)</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_provided_j = Σ(k=1 to N) A_jk</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of row <i>j</i> in the heatmap. How much attention word <b>j</b> gives to all words (including itself).</td>
+              </tr>
+              <tr>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Received</b> (for word <i>i</i>)</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_received_i = Σ(k=1 to N) A_ki</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of column <i>i</i> in the heatmap. How much attention word <b>i</b> receives from all words.</td>
+              </tr>
+              <tr>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Left</b> (for word <i>i</i>)</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_left_i = Σ(j=1 to i-1) A_ij</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Attention word <b>i</b> gives to words to its left (lower column indices).</td>
+              </tr>
+              <tr>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Total Right</b> (for word <i>i</i>)</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>total_right_i = Σ(j=i+1 to N) A_ij</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Attention word <b>i</b> gives to words to its right (higher column indices).</td>
+              </tr>
+              <tr>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}><b>Heatmap</b> <i>A<sub>ij</sub></i></td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>A_ij = Σ(l=1 to L) Σ(h=1 to H) Attention^(l,h)_ij</td>
+                <td style={{ textAlign: 'left', verticalAlign: 'top', padding: '6px 12px' }}>Sum of attention from word <b>j</b> to word <b>i</b> over all layers <i>L</i> and heads <i>H</i> (matrix cell in the heatmap).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 };

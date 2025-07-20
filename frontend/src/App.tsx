@@ -140,8 +140,8 @@ function App() {
 
   return (
     <div>
-      <h1>Comprehension Graph</h1>
-      <div style={{marginBottom: 12, textAlign: 'left'}}>
+      <h1>Understany</h1>
+      <div style={{marginBottom: 8}}>
         <label>
           <input
             type="checkbox"
@@ -149,11 +149,9 @@ function App() {
             onChange={e => setIncludePunctuation(e.target.checked)}
             style={{marginRight: 6}}
           />
-          Include punctuation in calculations
+          Include punctuation
         </label>
-      </div>
-      <div style={{marginBottom: 12, textAlign: 'left'}}>
-        <label>
+        <label style={{marginLeft: 16}}>
           Sentences per group:
           <input
             type="number"
@@ -161,68 +159,44 @@ function App() {
             max={10}
             value={sentencesPerGroup}
             onChange={e => setSentencesPerGroup(Math.max(1, Number(e.target.value)))}
-            style={{width: 60, marginLeft: 8, padding: '2px 4px'}}
+            style={{width: 50, marginLeft: 6, padding: '1px 3px'}}
           />
         </label>
-        <span style={{marginLeft: 8, fontSize: '0.9em', color: '#666'}}>
-          (Splits the text into groups of N sentences. Each group is processed and visualized separately, allowing any text length.)
-        </span>
       </div>
-      <form style={{marginBottom: 20, width: '100%'}}>
+      <form style={{marginBottom: 16, width: '100%'}}>
         <textarea 
           value={input} 
           onChange={e => setInput(e.target.value)} 
-          rows={6} 
+          rows={4} 
           cols={60} 
-          placeholder="Enter your text here..."
-          style={{width: '100%', fontFamily: 'monospace', boxSizing: 'border-box', minHeight: 120, resize: 'vertical'}}
+          placeholder="Enter text..."
+          style={{width: '100%', fontFamily: 'monospace', boxSizing: 'border-box', minHeight: 80, resize: 'vertical'}}
         />
-        {input.trim() && (
-          <div style={{marginTop: 4, fontSize: '0.8em', color: '#666'}}>
-            {(() => {
-              const groups = getSentenceGroups(input, sentencesPerGroup);
-              const totalTokens = groups.reduce((total, group) => total + group.split(/\s+/).length, 0);
-              const maxGroupTokens = Math.max(...groups.map(group => group.split(/\s+/).length));
-              return (
-                <span style={{color: '#198754'}}>
-                  {groups.length} group{groups.length > 1 ? 's' : ''} (~{totalTokens} tokens total, max {maxGroupTokens} per group)
-                  {groups.length > 1 && ' - Navigate between groups in visualization below'}
-                </span>
-              );
-            })()}
+        {input.trim() && getSentenceGroups(input, sentencesPerGroup).length > 1 && (
+          <div style={{marginTop: 2, fontSize: '0.8em', color: '#666'}}>
+            {getSentenceGroups(input, sentencesPerGroup).length} groups
           </div>
         )}
       </form>
-      {/* Attention Heatmap Visualization */}
-      {/* Attention Heatmap Visualization */}
       {input.trim() && (
-        <div style={{margin: '32px 0'}}>
-          <h2>Word Attention Heatmap</h2>
-          {getSentenceGroups(input, sentencesPerGroup).length > 1 && input.trim() && (
-            <div style={{marginBottom: 16, padding: 12, background: '#f0f8ff', borderRadius: 6, textAlign: 'left'}}>
-                {allGroupsData.length > 1 && (
-                  <div style={{marginBottom: 12, padding: 8, background: '#e7f3ff', borderRadius: 4}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6}}>
-                      <button 
-                        onClick={() => setCurrentGroupIndex(Math.max(0, currentGroupIndex - 1))}
-                        disabled={currentGroupIndex === 0}
-                        style={{padding: '2px 8px', fontSize: '0.8em'}}
-                      >
-                        ← Previous
-                      </button>
-                      <span style={{fontSize: '0.9em', fontWeight: 'bold'}}>
-                        Group {currentGroupIndex + 1} of {allGroupsData.length}
-                      </span>
-                      <button 
-                        onClick={() => setCurrentGroupIndex(Math.min(allGroupsData.length - 1, currentGroupIndex + 1))}
-                        disabled={currentGroupIndex === allGroupsData.length - 1}
-                        style={{padding: '2px 8px', fontSize: '0.8em'}}
-                      >
-                        Next →
-                      </button>
-                    </div>
-                  </div>
-                )}
+        <div style={{margin: '16px 0'}}>
+          {getSentenceGroups(input, sentencesPerGroup).length > 1 && input.trim() && allGroupsData.length > 1 && (
+            <div style={{ marginBottom: 8 }}>
+              <button 
+                onClick={() => setCurrentGroupIndex(Math.max(0, currentGroupIndex - 1))}
+                disabled={currentGroupIndex === 0}
+              >
+                ← Previous
+              </button>
+              <span>
+                Group {currentGroupIndex + 1} of {allGroupsData.length}
+              </span>
+              <button 
+                onClick={() => setCurrentGroupIndex(Math.min(allGroupsData.length - 1, currentGroupIndex + 1))}
+                disabled={currentGroupIndex === allGroupsData.length - 1}
+              >
+                Next →
+              </button>
             </div>
           )}
           {displayWords.length > 0 && displayAttention.length > 0 ? (
@@ -242,14 +216,12 @@ function App() {
               />
             </>
           ) : attentionError ? (
-            <div style={{color: 'red'}}>{attentionError}</div>
+            <div style={{color: 'red', fontSize: '0.9em'}}>{attentionError}</div>
           ) : (
-            <div style={{color: '#888'}}>No attention data.</div>
+            <div style={{color: '#888', fontSize: '0.9em'}}>No data</div>
           )}
         </div>
       )}
-      {/* End of attention visualization UI */}
-      {/* End of attention visualization UI */}
     </div>
   )
 }

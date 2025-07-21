@@ -12,7 +12,6 @@ function App() {
   const [input, setInput] = useState('')
   const [attentionData, setAttentionData] = useState<{words: string[], attention: number[][]} | null>(null);
   const [attentionError, setAttentionError] = useState<string | null>(null);
-  const [includePunctuation, setIncludePunctuation] = useState(true);
   const [selectedTokenIndices, setSelectedTokenIndices] = useState<number[]>([]); // multi-token selection
   const [unknownTokenIndices, setUnknownTokenIndices] = useState<number[]>([]); // indices of words marked as unknown
   const [knownTokenIndices, setKnownTokenIndices] = useState<number[]>([]); // indices of words marked as known
@@ -91,7 +90,7 @@ function App() {
     fetchAttention();
   }, [input, sentencesPerGroup, currentGroupIndex]);
 
-  // Attention data for display (always includes all words including punctuation)
+  // Attention data for display (always includes all words including punctuation for display, but punctuation is excluded from calculations)
   let displayWords = attentionData?.words || [];
   let displayAttention = attentionData?.attention || [];
   
@@ -125,32 +124,21 @@ function App() {
       })
     );
     
-    // If punctuation is not included in calculations, zero out attention to/from punctuation words
-    if (!includePunctuation) {
-      displayAttention = displayAttention.map((row, i) =>
-        row.map((val, j) => {
-          const isPuncI = isPunctuation(displayWords[i]);
-          const isPuncJ = isPunctuation(displayWords[j]);
-          // Zero out if either word is punctuation
-          return (isPuncI || isPuncJ) ? 0 : val;
-        })
-      );
-    }
+    // Always exclude punctuation from calculations - zero out attention to/from punctuation words
+    displayAttention = displayAttention.map((row, i) =>
+      row.map((val, j) => {
+        const isPuncI = isPunctuation(displayWords[i]);
+        const isPuncJ = isPunctuation(displayWords[j]);
+        // Zero out if either word is punctuation
+        return (isPuncI || isPuncJ) ? 0 : val;
+      })
+    );
   }
 
   return (
     <div>
       <h1>Understany</h1>
       <div style={{marginBottom: 8}}>
-        <label>
-          <input
-            type="checkbox"
-            checked={includePunctuation}
-            onChange={e => setIncludePunctuation(e.target.checked)}
-            style={{marginRight: 6}}
-          />
-          Include punctuation
-        </label>
         <label style={{marginLeft: 16}}>
           Sentences per group:
           <input
@@ -212,7 +200,6 @@ function App() {
                 setUnknownTokenIndices={setUnknownTokenIndices}
                 setKnownTokenIndices={setKnownTokenIndices}
                 punctuationIndices={displayWords.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1)}
-                includePunctuationInCalculations={includePunctuation}
               />
             </>
           ) : attentionError ? (

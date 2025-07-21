@@ -12,7 +12,6 @@ interface AttentionHeatmapProps {
   setUnknownTokenIndices?: (indices: number[]) => void; // setter for unknown words
   setKnownTokenIndices?: (indices: number[]) => void; // setter for known words
   punctuationIndices?: number[]; // indices of punctuation words
-  includePunctuationInCalculations?: boolean; // whether punctuation is included in calculations
 }
 
 const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
@@ -24,8 +23,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   knownTokenIndices = [],
   setUnknownTokenIndices,
   setKnownTokenIndices,
-  punctuationIndices = [],
-  includePunctuationInCalculations = true
+  punctuationIndices = []
 }) => {
   const displayWords = words;
   // Adapt attention: unknown words only receive, not provide
@@ -82,27 +80,12 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     normReceived = normReceivedCopy;
     normProvided = normProvidedCopy;
   }
-  // For scoreboard and graph, reorder left/right/normDiff to match displayWords
-  const leftAttentionScores = words.map((_, i) => {
-    let score = 0;
-    for (let j = 0; j < i; ++j) {
-      score += displayAttention[i][j];
-    }
-    return score;
-  });
-  const rightAttentionScores = words.map((_, i) => {
-    let score = 0;
-    for (let j = i + 1; j < words.length; ++j) {
-      score += displayAttention[i][j];
-    }
-    return score;
-  });
   // Total attention received (sum of column)
   const totalReceived = received;
   // Total attention provided (sum of row)
   const totalProvided = provided;
 
-  const [scoreSortMetric, setScoreSortMetric] = useState<'original' | 'left' | 'right' | 'received' | 'provided' | 'normSum'>('provided');
+  const [scoreSortMetric, setScoreSortMetric] = useState<'received' | 'provided' | 'normSum'>('normSum');
   // Percent-based band controls
   const [upperBandPercent, setUpperBandPercent] = useState(20); // percent of words in upper band
   const [lowerBandPercent, setLowerBandPercent] = useState(20); // percent of words in lower band
@@ -124,8 +107,6 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   const metrics = wordObjs.map(({ word, index }) => ({
     word,
     index,
-    left: leftAttentionScores[index],
-    right: rightAttentionScores[index],
     received: totalReceived[index],
     provided: totalProvided[index],
     normProvided: normProvided[index],
@@ -135,18 +116,14 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     isKnown: knownTokenIndices.includes(index),
   }));
   // Sorting logic: sort metrics, do not recalculate
-  // Filter out punctuation from scoreboard when not included in calculations
+  // Filter out punctuation from scoreboard since they're always excluded from calculations
   const filteredMetrics = metrics.filter((_, i) => 
-    !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+    !punctuationIndices.includes(i)
   );
   const scoreboard = [...filteredMetrics];
-  if (scoreSortMetric === 'original') {
-    scoreboard.sort((a, b) => a.index - b.index);
-  } else {
-    scoreboard.sort((a, b) => a[scoreSortMetric] - b[scoreSortMetric]);
-  }
+  scoreboard.sort((a, b) => a[scoreSortMetric] - b[scoreSortMetric]);
 
-  // Text score: average (mean) of normSum for all words (excluding punctuation when not included)
+  // Text score: average (mean) of normSum for all words (punctuation always excluded)
   const textScore = filteredMetrics.length > 0 ? filteredMetrics.reduce((sum, m) => sum + m.normSum, 0) / filteredMetrics.length : 0;
 
   // Suggestion: find the words with the lowest normalized difference
@@ -195,11 +172,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Always display original text in original order, colored by the current metric or selection
   const originalTextColorArr = customColorArr || metrics.map(m => {
-    if (scoreSortMetric === 'original') return m.normProvided;
     if (scoreSortMetric === 'received') return m.normReceived;
     if (scoreSortMetric === 'provided') return m.normProvided;
     if (scoreSortMetric === 'normSum') return m.normSum;
-    return m[scoreSortMetric]; // for 'left' and 'right'
+    return m[scoreSortMetric];
   });
   const originalTextColorScale = getColorScale(originalTextColorArr);
 
@@ -226,15 +202,15 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     return sorted[idx];
   }
   useEffect(() => {
-    // Create filtered color array that matches scoreboard filtering
+    // Create filtered color array that excludes punctuation (always excluded from calculations)
     const filteredColorArr = originalTextColorArr.filter((_, i) => 
-      !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+      !punctuationIndices.includes(i)
     );
     // Compute thresholds from filtered color metric to match scoreboard
     setUpperThreshold(computePercentile(filteredColorArr, upperBandPercent));
     setLowerThreshold(computeLowerPercentile(filteredColorArr, lowerBandPercent));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [originalTextColorArr, upperBandPercent, lowerBandPercent, punctuationIndices, includePunctuationInCalculations]);
+  }, [originalTextColorArr, upperBandPercent, lowerBandPercent, punctuationIndices]);
 
   // State to show/hide the Word Attention Heatmap
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
@@ -269,13 +245,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       {/* Move original text display above the line graph */}
       <div style={{margin: '16px 0', fontSize: '1.1em', lineHeight: 1.7}}>
         <div style={{display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8}}>
-          <b>Original Text{selectedTokenIndices && selectedTokenIndices.length > 0 ? ' (colored by ' + customColorLabel + ')' : ' (colored by ' + (scoreSortMetric === 'original' ? 'provided' : scoreSortMetric) + ')'}:</b>
+          <b>Original Text{selectedTokenIndices && selectedTokenIndices.length > 0 ? ' (colored by ' + customColorLabel + ')' : ' (colored by ' + scoreSortMetric + ')'}:</b>
           <div style={{fontSize: '0.8em'}}>
             <label style={{marginRight: 8}}>Sort by:</label>
-            <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'original' | 'left' | 'right' | 'received' | 'provided' | 'normSum')} style={{fontSize: 13, padding: '2px 6px'}}>
-              <option value="original">Norm. Sum (default)</option>
-              <option value="left">Total Left</option>
-              <option value="right">Total Right</option>
+            <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'received' | 'provided' | 'normSum')} style={{fontSize: 13, padding: '2px 6px'}}>
               <option value="received">Norm. Received</option>
               <option value="provided">Norm. Provided</option>
               <option value="normSum">Norm. Sum</option>
@@ -409,16 +382,16 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               let valueForBand = originalTextColorArr[i];
               let verticalPosition = 1; // Default to middle band
               
-              // Special handling for punctuation when not included in calculations
-              if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
+              // Special handling for punctuation since they're always excluded from calculations
+              if (punctuationIndices.includes(i)) {
                 verticalPosition = 1; // Force punctuation to middle band position
               } else {
                 // For non-punctuation words, use the value from the filtered array for band determination
                 const filteredColorArr = originalTextColorArr.filter((_, idx) => 
-                  !(punctuationIndices.includes(idx) && !includePunctuationInCalculations)
+                  !punctuationIndices.includes(idx)
                 );
                 const filteredIndex = originalTextColorArr.slice(0, i + 1)
-                  .filter((_, idx) => !(punctuationIndices.includes(idx) && !includePunctuationInCalculations))
+                  .filter((_, idx) => !punctuationIndices.includes(idx))
                   .length - 1;
                 
                 const filteredValue = filteredColorArr[filteredIndex];
@@ -450,16 +423,16 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               // Determine band for coloring
               let band: 'above' | 'between' | 'below' = 'between';
               
-              // Special handling for punctuation when not included in calculations
-              if (punctuationIndices.includes(i) && !includePunctuationInCalculations) {
+              // Special handling for punctuation since they're always excluded from calculations
+              if (punctuationIndices.includes(i)) {
                 band = 'between'; // Force punctuation to middle band
               } else {
                 // For non-punctuation words, use the same filtered array logic as positioning
                 const filteredColorArr = originalTextColorArr.filter((_, idx) => 
-                  !(punctuationIndices.includes(idx) && !includePunctuationInCalculations)
+                  !punctuationIndices.includes(idx)
                 );
                 const filteredIndex = originalTextColorArr.slice(0, i + 1)
-                  .filter((_, idx) => !(punctuationIndices.includes(idx) && !includePunctuationInCalculations))
+                  .filter((_, idx) => !punctuationIndices.includes(idx))
                   .length - 1;
                 
                 const filteredValue = filteredColorArr[filteredIndex];
@@ -475,8 +448,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     position: 'absolute',
                     left: `${estimatedLeftOffset}px`,
                     top: `${topEm}em`,
-                    background: (punctuationIndices.includes(i) && !includePunctuationInCalculations)
-                      ? '#e0e0e0' // Grey background for punctuation when not included in calculations
+                    background: punctuationIndices.includes(i)
+                      ? '#e0e0e0' // Grey background for punctuation since they're always excluded from calculations
                       : colorByBand
                         ? bandColors[band]
                         : originalTextColorScale(originalTextColorArr[i]),
@@ -542,17 +515,17 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         
         {/* Helper function to determine band for a word */}
         {(() => {
-          // Create the same filtered data that was used for threshold calculation
+          // Create the same filtered data that excludes punctuation (always excluded from calculations)
           const filteredColorArr = originalTextColorArr.filter((_, i) => 
-            !(punctuationIndices.includes(i) && !includePunctuationInCalculations)
+            !punctuationIndices.includes(i)
           );
           
           // Get the same metric values that were used to calculate thresholds
           const getMetricValueForBanding = (item: typeof scoreboard[0]) => {
             const index = item.index;
-            // Find the position of this word in the filtered array
+            // Find the position of this word in the filtered array (punctuation always excluded)
             const filteredIndex = originalTextColorArr.slice(0, index + 1)
-              .filter((_, i) => !(punctuationIndices.includes(i) && !includePunctuationInCalculations))
+              .filter((_, i) => !punctuationIndices.includes(i))
               .length - 1;
             
             // Use the value from the same filtered array used for thresholds

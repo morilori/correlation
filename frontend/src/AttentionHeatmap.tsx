@@ -295,249 +295,170 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         </div>
 
         <div style={{marginTop: 8, background: '#f8f8f8', padding: 20, borderRadius: 6, fontFamily: 'monospace', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
-          {/* Create a horizontally scrollable layout where sentences break into new lines */}
           {(() => {
-            // Use a single constant for band height and vertical spacing
+            // Constants
             const BAND_HEIGHT_EM = 2.5;
-            const ROWS_PER_LINE = 3; // above, between, below
-            const LINE_GAP_EM = 4; // add extra gap between triple bands
+            const ROWS_PER_LINE = 3;
+            const LINE_GAP_EM = 4;
+            const WORD_GAP = 8;
             
-            // Detect sentence boundaries for line breaking
+            // Helper functions
             const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
+            const getWordWidth = (word: string) => word.length * 9 + 14;
             
-            // Calculate line numbers based on sentences
-            let lineNumber = 0;
+            // Pre-calculate all word positions and line data in a single pass
+            const wordPositions: Array<{
+              lineNumber: number;
+              leftOffset: number;
+              verticalPosition: number;
+              band: 'above' | 'between' | 'below';
+            }> = [];
+            const lineWidths: number[] = [];
+            
+            let currentLine = 0;
+            let currentLineOffset = 0;
             let maxLineNumber = 0;
-            for (let i = 0; i < metrics.length; i++) {
-              maxLineNumber = Math.max(maxLineNumber, lineNumber);
-              // After processing the word, check if it ends a sentence
-              if (isSentenceEnd(metrics[i].word)) {
-                lineNumber++;
-              }
-            }
             
-            // Calculate the total height needed based on the number of sentences
-            // Don't add LINE_GAP_EM after the last sentence to avoid extra space
-            const totalHeightEm = (maxLineNumber + 1) * (BAND_HEIGHT_EM * ROWS_PER_LINE) + maxLineNumber * LINE_GAP_EM;
-            
-            return (
-              <div style={{position: 'relative', minHeight: `${totalHeightEm}em`, width: 'max-content', lineHeight: '1.8'}}> {/* Dynamic height container */}
-            {/* Background color bands for all lines and threshold regions */}
-            {(() => {
+            // Single pass calculation
+            metrics.forEach((m, i) => {
+              const wordWidth = getWordWidth(m.word);
+              const isPunctuation = punctuationIndices.includes(i);
+              const value = originalTextColorArr[i];
               
-              // For each line and each band (above, between, below), render a band
-              const bands = [];
-              for (let l = 0; l <= maxLineNumber; l++) {
-                // Each band is BAND_HEIGHT_EM tall, offset by l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM)
-                // But the gap is only between the triple bands, not after each band
-                const lineOffsetEm = l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
-                
-                // Calculate the width for this line based on words in this sentence
-                let lineWidth = 0;
-                let wordCount = 0;
-                let currentSentence = 0;
-                for (let i = 0; i < metrics.length; i++) {
-                  // If current sentence matches the line we're calculating for, include this word
-                  if (currentSentence === l) {
-                    const wordWidth = (metrics[i].word.length * 9) + 14;
-                    lineWidth += wordWidth + 8; // 8px gap between words
-                    wordCount++;
-                  }
-                  // After processing the word, check if it ends a sentence
-                  if (isSentenceEnd(metrics[i].word)) {
-                    currentSentence++;
-                  }
-                }
-                
-                bands.push(
-                  <React.Fragment key={l}>
-                    {/* Above threshold (top row) outline */}
-                    <div style={{
-                      position: 'absolute',
-                      left: 0,
-                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
-                      top: `${0 + lineOffsetEm}em`,
-                      height: `${BAND_HEIGHT_EM}em`,
-                      background: 'none',
-                      border: '1.5px solid #bbb',
-                      borderRadius: '6px 6px 0 0',
-                      zIndex: 10,
-                      boxSizing: 'border-box',
-                      pointerEvents: 'none',
-                    }} />
-                    {/* Between thresholds (middle row) outline */}
-                    <div style={{
-                      position: 'absolute',
-                      left: 0,
-                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
-                      top: `${BAND_HEIGHT_EM + lineOffsetEm}em`,
-                      height: `${BAND_HEIGHT_EM}em`,
-                      background: 'none',
-                      borderLeft: '1.5px solid #bbb',
-                      borderRight: '1.5px solid #bbb',
-                      zIndex: 10,
-                      boxSizing: 'border-box',
-                      pointerEvents: 'none',
-                    }} />
-                    {/* Below threshold (bottom row) outline */}
-                    <div style={{
-                      position: 'absolute',
-                      left: 0,
-                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
-                      top: `${2 * BAND_HEIGHT_EM + lineOffsetEm}em`,
-                      height: `${BAND_HEIGHT_EM}em`,
-                      background: 'none',
-                      border: '1.5px solid #bbb',
-                      borderRadius: '0 0 6px 6px',
-                      zIndex: 10,
-                      boxSizing: 'border-box',
-                      pointerEvents: 'none',
-                    }} />
-                  </React.Fragment>
-                );
-              }
-              return bands;
-            })()}
-            {/* Removed left-side band labels to prevent overlap with words */}
-            
-            {/* Position each word in its original horizontal position but appropriate vertical level with sentence breaks */}
-            {metrics.map((m, i) => {
-              const BAND_HEIGHT_EM = 2.5;
-              const ROWS_PER_LINE = 3;
-              const LINE_GAP_EM = 4;
-              let valueForBand = originalTextColorArr[i];
-              let verticalPosition = 1; // Default to middle band
-              
-              // Special handling for punctuation since they're always excluded from calculations
-              if (punctuationIndices.includes(i)) {
-                verticalPosition = 1; // Force punctuation to middle band position
-              } else {
-                // For non-punctuation words, use the value from the filtered array for band determination
-                const filteredColorArr = originalTextColorArr.filter((_, idx) => 
-                  !punctuationIndices.includes(idx)
-                );
-                const filteredIndex = originalTextColorArr.slice(0, i + 1)
-                  .filter((_, idx) => !punctuationIndices.includes(idx))
-                  .length - 1;
-                
-                const filteredValue = filteredColorArr[filteredIndex];
-                
-                // Normal position determination based on filtered value and thresholds
-                if (filteredValue >= upperThreshold) {
-                  verticalPosition = 0;
-                } else if (filteredValue <= lowerThreshold) {
-                  verticalPosition = 2;
-                }
-              }
-              
-              // Calculate position based on sentence breaks instead of width
-              const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
-              const wordWidth = (m.word.length * 9) + 14;
-              const boxGap = 8;
-              
-              // Find which line (sentence) this word belongs to
-              let lineNumber = 0;
-              let currentLineOffset = 0;
-              
-              for (let j = 0; j < i; j++) {
-                const prevWordWidth = (metrics[j].word.length * 9) + 14;
-                currentLineOffset += prevWordWidth + boxGap;
-                
-                // After processing the word, check if it ends a sentence
-                if (isSentenceEnd(metrics[j].word)) {
-                  lineNumber++;
-                  currentLineOffset = 0; // Reset horizontal position for new line
-                }
-              }
-              
-              const estimatedLeftOffset = currentLineOffset;
-              const topEm = verticalPosition * BAND_HEIGHT_EM + lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
-              // Determine band for coloring
+              // Determine position and band
+              let verticalPosition = 1;
               let band: 'above' | 'between' | 'below' = 'between';
               
-              // Special handling for punctuation since they're always excluded from calculations
-              if (punctuationIndices.includes(i)) {
-                band = 'between'; // Force punctuation to middle band
-              } else {
-                // For non-punctuation words, use the same filtered array logic as positioning
-                const filteredColorArr = originalTextColorArr.filter((_, idx) => 
-                  !punctuationIndices.includes(idx)
-                );
-                const filteredIndex = originalTextColorArr.slice(0, i + 1)
-                  .filter((_, idx) => !punctuationIndices.includes(idx))
-                  .length - 1;
-                
-                const filteredValue = filteredColorArr[filteredIndex];
-                
-                // Normal band determination based on filtered value and thresholds
-                if (filteredValue >= upperThreshold) band = 'above';
-                else if (filteredValue <= lowerThreshold) band = 'below';
+              if (!isPunctuation) {
+                if (value >= upperThreshold) {
+                  verticalPosition = 0;
+                  band = 'above';
+                } else if (value <= lowerThreshold) {
+                  verticalPosition = 2;
+                  band = 'below';
+                }
               }
-              return (
-                <span
-                  key={m.index}
-                  style={{
+              
+              wordPositions.push({
+                lineNumber: currentLine,
+                leftOffset: currentLineOffset,
+                verticalPosition,
+                band
+              });
+              
+              currentLineOffset += wordWidth + WORD_GAP;
+              lineWidths[currentLine] = Math.max(lineWidths[currentLine] || 0, currentLineOffset);
+              
+              if (isSentenceEnd(m.word)) {
+                maxLineNumber = Math.max(maxLineNumber, currentLine);
+                currentLine++;
+                currentLineOffset = 0;
+              }
+            });
+            
+            const totalHeightEm = (maxLineNumber + 1) * (BAND_HEIGHT_EM * ROWS_PER_LINE) + maxLineNumber * LINE_GAP_EM;
+            
+            // Generate band elements efficiently
+            const bands: React.ReactElement[] = [];
+            for (let l = 0; l <= maxLineNumber; l++) {
+              const lineOffsetEm = l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
+              const width = Math.max(lineWidths[l] || 200, 200);
+              
+              const bandConfigs = [
+                { top: lineOffsetEm, style: { border: '1.5px solid #bbb', borderRadius: '6px 6px 0 0' } },
+                { top: lineOffsetEm + BAND_HEIGHT_EM, style: { borderLeft: '1.5px solid #bbb', borderRight: '1.5px solid #bbb' } },
+                { top: lineOffsetEm + 2 * BAND_HEIGHT_EM, style: { border: '1.5px solid #bbb', borderRadius: '0 0 6px 6px' } }
+              ];
+              
+              bandConfigs.forEach((config, idx) => {
+                bands.push(
+                  <div key={`${l}-${idx}`} style={{
                     position: 'absolute',
-                    left: `${estimatedLeftOffset}px`,
-                    top: `${topEm}em`,
-                    background: punctuationIndices.includes(i)
-                      ? '#e0e0e0' // Grey background for punctuation since they're always excluded from calculations
-                      : colorByBand
-                        ? bandColors[band]
-                        : originalTextColorScale(originalTextColorArr[i]),
-                    color: m.isUnknown ? '#b00' : '#000',
-                    borderRadius: 4,
-                    width: `${wordWidth}px`,
-                    minWidth: `${wordWidth}px`,
-                    maxWidth: `${wordWidth}px`,
-                    textAlign: 'center',
-                    padding: '3px 0',
-                    display: 'inline-block',
-                    fontWeight: 500,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    cursor: 'pointer',
-                    border: selectedTokenIndices.includes(i) ? '2px solid #0072B2' : '2px solid transparent',
-                    boxShadow: selectedTokenIndices.includes(i) ? '0 0 4px #0072B2' : undefined,
-                    transition: 'border 0.1s, box-shadow 0.1s, top 0.3s ease',
-                    textDecoration: m.isUnknown ? 'underline wavy #b00' : undefined,
-                    zIndex: 2,
-                    marginRight: 0,
-                    whiteSpace: 'nowrap',
-                  }}
-                  onClick={() => {
-                    if (!setSelectedTokenIndices) return;
-                    if (selectedTokenIndices.includes(i)) {
-                      setSelectedTokenIndices(selectedTokenIndices.filter(idx => idx !== i));
-                    } else {
-                      setSelectedTokenIndices([...selectedTokenIndices, i]);
-                    }
-                  }}
-                  title={
-                    `Norm sum: ${m.normSum.toFixed(3)} (${
-                      valueForBand > upperThreshold ? 'above threshold' :
-                      valueForBand < lowerThreshold ? 'below threshold' :
-                      'within thresholds'
-                    })` + 
-                    (m.isUnknown ? ' | Unknown word: only receives attention, does not provide.' : '') +
-                    (selectedTokenIndices.length > 0
-                      ? scoreSortMetric === 'provided'
-                        ? ` | Attention given to selected: ${customColorArr ? customColorArr[i].toFixed(3) : ''}`
-                        : scoreSortMetric === 'received'
-                          ? ` | Attention received from selected: ${customColorArr ? customColorArr[i].toFixed(3) : ''}`
-                          : ` | Attention given to selected: ${customColorArr ? customColorArr[i].toFixed(3) : ''}`
-                      : scoreSortMetric === 'provided'
-                        ? ` | Norm. provided: ${metrics[i].normProvided.toFixed(3)}`
-                        : scoreSortMetric === 'received'
-                          ? ` | Norm. received: ${metrics[i].normReceived.toFixed(3)}`
-                          : '')
-                  }
-                >
-                  {m.word}
-                </span>
-              );
-            })}
-          </div>
+                    left: 0,
+                    width: `${width}px`,
+                    top: `${config.top}em`,
+                    height: `${BAND_HEIGHT_EM}em`,
+                    background: 'none',
+                    zIndex: 10,
+                    boxSizing: 'border-box',
+                    pointerEvents: 'none',
+                    ...config.style
+                  }} />
+                );
+              });
+            }
+            
+            return (
+              <div style={{position: 'relative', minHeight: `${totalHeightEm}em`, width: 'max-content', lineHeight: '1.8'}}>
+                {bands}
+                {metrics.map((m, i) => {
+                  const pos = wordPositions[i];
+                  const wordWidth = getWordWidth(m.word);
+                  const topEm = pos.verticalPosition * BAND_HEIGHT_EM + pos.lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
+                  const isPunctuation = punctuationIndices.includes(i);
+                  const isSelected = selectedTokenIndices.includes(i);
+                  
+                  // Simplified background calculation
+                  const background = isPunctuation 
+                    ? '#e0e0e0'
+                    : colorByBand 
+                      ? bandColors[pos.band]
+                      : originalTextColorScale(originalTextColorArr[i]);
+                  
+                  // Optimized tooltip generation
+                  const bandLabel = pos.band === 'above' ? 'above threshold' : 
+                                   pos.band === 'below' ? 'below threshold' : 'within thresholds';
+                  
+                  const tooltipParts = [
+                    `Norm sum: ${m.normSum.toFixed(3)} (${bandLabel})`,
+                    m.isUnknown && 'Unknown word: only receives attention, does not provide.',
+                    selectedTokenIndices.length > 0 && customColorArr && 
+                      `Attention ${scoreSortMetric === 'received' ? 'received from' : 'given to'} selected: ${customColorArr[i].toFixed(3)}`,
+                    selectedTokenIndices.length === 0 && 
+                      `Norm. ${scoreSortMetric}: ${(m as any)[scoreSortMetric === 'normSum' ? 'normSum' : 
+                                                                scoreSortMetric === 'provided' ? 'normProvided' : 'normReceived'].toFixed(3)}`
+                  ].filter(Boolean).join(' | ');
+                  
+                  return (
+                    <span
+                      key={m.index}
+                      style={{
+                        position: 'absolute',
+                        left: `${pos.leftOffset}px`,
+                        top: `${topEm}em`,
+                        background,
+                        color: m.isUnknown ? '#b00' : '#000',
+                        borderRadius: 4,
+                        width: `${wordWidth}px`,
+                        textAlign: 'center',
+                        padding: '3px 0',
+                        display: 'inline-block',
+                        fontWeight: 500,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        cursor: 'pointer',
+                        border: isSelected ? '2px solid #0072B2' : '2px solid transparent',
+                        boxShadow: isSelected ? '0 0 4px #0072B2' : undefined,
+                        transition: 'border 0.1s, box-shadow 0.1s, top 0.3s ease',
+                        textDecoration: m.isUnknown ? 'underline wavy #b00' : undefined,
+                        zIndex: 2,
+                        whiteSpace: 'nowrap',
+                      }}
+                      onClick={() => {
+                        if (!setSelectedTokenIndices) return;
+                        setSelectedTokenIndices(
+                          isSelected 
+                            ? selectedTokenIndices.filter(idx => idx !== i)
+                            : [...selectedTokenIndices, i]
+                        );
+                      }}
+                      title={tooltipParts}
+                    >
+                      {m.word}
+                    </span>
+                  );
+                })}
+              </div>
             );
           })()}
         </div>

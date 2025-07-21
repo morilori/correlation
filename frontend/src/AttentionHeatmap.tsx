@@ -294,41 +294,68 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           </label>
         </div>
 
-        <div style={{marginTop: 8, background: '#f8f8f8', padding: 20, borderRadius: 6, fontFamily: 'monospace', wordBreak: 'normal', position: 'relative', overflow: 'auto', minWidth: '1100px'}}>
-          {/* Create a grid layout where each word maintains its horizontal position but moves vertically */}
-          <div style={{position: 'relative', minHeight: '20em', width: '100%', lineHeight: '1.8', minWidth: '1100px'}}> {/* Increased height and width for line wrapping */}
+        <div style={{marginTop: 8, background: '#f8f8f8', padding: 20, borderRadius: 6, fontFamily: 'monospace', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
+          {/* Create a horizontally scrollable layout where sentences break into new lines */}
+          {(() => {
+            // Use a single constant for band height and vertical spacing
+            const BAND_HEIGHT_EM = 2.5;
+            const ROWS_PER_LINE = 3; // above, between, below
+            const LINE_GAP_EM = 4; // add extra gap between triple bands
+            
+            // Detect sentence boundaries for line breaking
+            const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
+            
+            // Calculate line numbers based on sentences
+            let lineNumber = 0;
+            let maxLineNumber = 0;
+            for (let i = 0; i < metrics.length; i++) {
+              maxLineNumber = Math.max(maxLineNumber, lineNumber);
+              // After processing the word, check if it ends a sentence
+              if (isSentenceEnd(metrics[i].word)) {
+                lineNumber++;
+              }
+            }
+            
+            // Calculate the total height needed based on the number of sentences
+            // Don't add LINE_GAP_EM after the last sentence to avoid extra space
+            const totalHeightEm = (maxLineNumber + 1) * (BAND_HEIGHT_EM * ROWS_PER_LINE) + maxLineNumber * LINE_GAP_EM;
+            
+            return (
+              <div style={{position: 'relative', minHeight: `${totalHeightEm}em`, width: 'max-content', lineHeight: '1.8'}}> {/* Dynamic height container */}
             {/* Background color bands for all lines and threshold regions */}
             {(() => {
-              // Use a single constant for band height and vertical spacing
-              const BAND_HEIGHT_EM = 2.5;
-              const ROWS_PER_LINE = 3; // above, between, below
-              const LINE_GAP_EM = 4; // add extra gap between triple bands
-              const wordWidths = metrics.map(met => (met.word.length * 9) + 14);
-              const boxGap = 8;
-              let currentLineWidth = 150;
-              let lineNumber = 0;
-              let maxLineNumber = 0;
-              for (let i = 0; i < metrics.length; i++) {
-                if (currentLineWidth + wordWidths[i] > 1000) {
-                  lineNumber++;
-                  currentLineWidth = 150;
-                }
-                currentLineWidth += wordWidths[i] + boxGap;
-                maxLineNumber = Math.max(maxLineNumber, lineNumber);
-              }
+              
               // For each line and each band (above, between, below), render a band
               const bands = [];
               for (let l = 0; l <= maxLineNumber; l++) {
                 // Each band is BAND_HEIGHT_EM tall, offset by l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM)
                 // But the gap is only between the triple bands, not after each band
                 const lineOffsetEm = l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
+                
+                // Calculate the width for this line based on words in this sentence
+                let lineWidth = 0;
+                let wordCount = 0;
+                let currentSentence = 0;
+                for (let i = 0; i < metrics.length; i++) {
+                  // If current sentence matches the line we're calculating for, include this word
+                  if (currentSentence === l) {
+                    const wordWidth = (metrics[i].word.length * 9) + 14;
+                    lineWidth += wordWidth + 8; // 8px gap between words
+                    wordCount++;
+                  }
+                  // After processing the word, check if it ends a sentence
+                  if (isSentenceEnd(metrics[i].word)) {
+                    currentSentence++;
+                  }
+                }
+                
                 bands.push(
                   <React.Fragment key={l}>
                     {/* Above threshold (top row) outline */}
                     <div style={{
                       position: 'absolute',
                       left: 0,
-                      width: '100%',
+                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
                       top: `${0 + lineOffsetEm}em`,
                       height: `${BAND_HEIGHT_EM}em`,
                       background: 'none',
@@ -342,7 +369,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     <div style={{
                       position: 'absolute',
                       left: 0,
-                      width: '100%',
+                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
                       top: `${BAND_HEIGHT_EM + lineOffsetEm}em`,
                       height: `${BAND_HEIGHT_EM}em`,
                       background: 'none',
@@ -356,7 +383,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     <div style={{
                       position: 'absolute',
                       left: 0,
-                      width: '100%',
+                      width: `${Math.max(lineWidth, 200)}px`, // Use calculated line width with minimum
                       top: `${2 * BAND_HEIGHT_EM + lineOffsetEm}em`,
                       height: `${BAND_HEIGHT_EM}em`,
                       background: 'none',
@@ -373,9 +400,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             })()}
             {/* Removed left-side band labels to prevent overlap with words */}
             
-            {/* Position each word in its original horizontal position but appropriate vertical level with line breaks */}
+            {/* Position each word in its original horizontal position but appropriate vertical level with sentence breaks */}
             {metrics.map((m, i) => {
-              // ...existing code...
               const BAND_HEIGHT_EM = 2.5;
               const ROWS_PER_LINE = 3;
               const LINE_GAP_EM = 4;
@@ -403,22 +429,28 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   verticalPosition = 2;
                 }
               }
-              const wordWidths = metrics.map(met => (met.word.length * 9) + 14);
+              
+              // Calculate position based on sentence breaks instead of width
+              const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
+              const wordWidth = (m.word.length * 9) + 14;
               const boxGap = 8;
-              let currentLineWidth = 150;
+              
+              // Find which line (sentence) this word belongs to
               let lineNumber = 0;
+              let currentLineOffset = 0;
+              
               for (let j = 0; j < i; j++) {
-                if (currentLineWidth + wordWidths[j] > 1000) {
+                const prevWordWidth = (metrics[j].word.length * 9) + 14;
+                currentLineOffset += prevWordWidth + boxGap;
+                
+                // After processing the word, check if it ends a sentence
+                if (isSentenceEnd(metrics[j].word)) {
                   lineNumber++;
-                  currentLineWidth = 150;
+                  currentLineOffset = 0; // Reset horizontal position for new line
                 }
-                currentLineWidth += wordWidths[j] + boxGap;
               }
-              if (currentLineWidth + wordWidths[i] > 1000) {
-                lineNumber++;
-                currentLineWidth = 150;
-              }
-              const estimatedLeftOffset = currentLineWidth;
+              
+              const estimatedLeftOffset = currentLineOffset;
               const topEm = verticalPosition * BAND_HEIGHT_EM + lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
               // Determine band for coloring
               let band: 'above' | 'between' | 'below' = 'between';
@@ -455,9 +487,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                         : originalTextColorScale(originalTextColorArr[i]),
                     color: m.isUnknown ? '#b00' : '#000',
                     borderRadius: 4,
-                    width: `${wordWidths[i]}px`,
-                    minWidth: `${wordWidths[i]}px`,
-                    maxWidth: `${wordWidths[i]}px`,
+                    width: `${wordWidth}px`,
+                    minWidth: `${wordWidth}px`,
+                    maxWidth: `${wordWidth}px`,
                     textAlign: 'center',
                     padding: '3px 0',
                     display: 'inline-block',
@@ -506,6 +538,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               );
             })}
           </div>
+            );
+          })()}
         </div>
         {/* Removed ScoreLineGraph component */}
       </div>

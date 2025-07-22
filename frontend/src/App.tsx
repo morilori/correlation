@@ -203,7 +203,7 @@ function App() {
               />
             </>
           ) : attentionError ? (
-            <div style={{color: 'red', fontSize: '0.9em'}}>{attentionError}</div>
+            <div style={{color: '#00AAFF', fontSize: '0.9em'}}>{attentionError}</div>
           ) : (
             <div style={{color: '#888', fontSize: '0.9em'}}>No data</div>
           )}

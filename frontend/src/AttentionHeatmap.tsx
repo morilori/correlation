@@ -137,10 +137,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     const max = Math.max(...arr);
     return (v: number) => {
       const t = (v - min) / (max - min + 1e-8);
-      // Red (low) to white (high)
-      const r = 255;
-      const g = Math.round(255 * t);
-      const b = Math.round(255 * t);
+      // Blue (#00AAFF - low) to white (high)
+      const r = Math.round(0 + (255 - 0) * t);     // 0 → 255
+      const g = Math.round(170 + (255 - 170) * t); // 170 → 255 (AA in hex = 170 in decimal)
+      const b = 255;                               // Always 255
       return `rgb(${r},${g},${b})`;
     };
   }
@@ -181,11 +181,11 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Option to color by band
   const [colorByBand, setColorByBand] = useState(false);
-  // Band colors: above=white, between=light red, below=red
+  // Band colors: above=white, between=light blue, below=blue
   const bandColors = {
     above: '#fff', // white
-    between: '#ffd6d6', // light red (middle)
-    below: '#ff4d4d', // strong red
+    between: '#cce6ff', // light blue (middle)
+    below: '#00AAFF', // strong blue
   };
 
   // Compute thresholds so that upperBandPercent% of words are above upperThreshold, and lowerBandPercent% below lowerThreshold
@@ -216,12 +216,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
 
-  // Red-to-white color scale for heatmap
-  function getRedWhiteColor(value: number, min: number, max: number) {
+  // Blue-to-white color scale for heatmap (matching #00AAFF theme)
+  function getBlueWhiteColor(value: number, min: number, max: number) {
     const t = (value - min) / (max - min + 1e-8);
-    const r = 255;
-    const g = Math.round(255 * t);
-    const b = Math.round(255 * t);
+    // Interpolate from #00AAFF (low) to white (high)
+    const r = Math.round(0 + (255 - 0) * t);     // 0 → 255
+    const g = Math.round(170 + (255 - 170) * t); // 170 → 255 (AA in hex = 170 in decimal)
+    const b = 255;                               // Always 255
     return `rgb(${r},${g},${b})`;
   }
 
@@ -304,7 +305,29 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             
             // Helper functions
             const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
-            const getWordWidth = (word: string) => word.length * 9 + 14;
+            const getWordWidth = (word: string, index: number) => {
+              const displayWord = isSentenceStart(index) ? capitalizeWord(word) : word;
+              return displayWord.length * 9 + 14;
+            };
+            
+            // Helper function to determine if a word should be capitalized (sentence beginning)
+            const isSentenceStart = (index: number): boolean => {
+              if (index === 0) return true; // First word is always sentence start
+              // Check if previous word ends with sentence punctuation
+              for (let i = index - 1; i >= 0; i--) {
+                const prevWord = metrics[i].word;
+                if (isSentenceEnd(prevWord)) return true;
+                // If we hit a non-punctuation word, this is not a sentence start
+                if (!/^[^\w]*$/.test(prevWord)) return false;
+              }
+              return false;
+            };
+            
+            // Helper function to capitalize first letter of a word
+            const capitalizeWord = (word: string): string => {
+              if (!word || word.length === 0) return word;
+              return word.charAt(0).toUpperCase() + word.slice(1);
+            };
             
             // Pre-calculate all word positions and line data in a single pass
             const wordPositions: Array<{
@@ -321,7 +344,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             
             // Single pass calculation
             metrics.forEach((m, i) => {
-              const wordWidth = getWordWidth(m.word);
+              const wordWidth = getWordWidth(m.word, i);
               const isPunctuation = punctuationIndices.includes(i);
               const value = originalTextColorArr[i];
               
@@ -393,14 +416,14 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 {bands}
                 {metrics.map((m, i) => {
                   const pos = wordPositions[i];
-                  const wordWidth = getWordWidth(m.word);
+                  const wordWidth = getWordWidth(m.word, i);
                   const topEm = pos.verticalPosition * BAND_HEIGHT_EM + pos.lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
                   const isPunctuation = punctuationIndices.includes(i);
                   const isSelected = selectedTokenIndices.includes(i);
                   
                   // Simplified background calculation
                   const background = isPunctuation 
-                    ? '#e0e0e0'
+                    ? '#cce6ff'  // Same as middle band color
                     : colorByBand 
                       ? bandColors[pos.band]
                       : originalTextColorScale(originalTextColorArr[i]);
@@ -427,7 +450,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                         left: `${pos.leftOffset}px`,
                         top: `${topEm}em`,
                         background,
-                        color: m.isUnknown ? '#b00' : '#000',
+                        color: m.isUnknown ? '#00AAFF' : '#000',
                         borderRadius: 4,
                         width: `${wordWidth}px`,
                         textAlign: 'center',
@@ -440,7 +463,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                         border: isSelected ? '2px solid #0072B2' : '2px solid transparent',
                         boxShadow: isSelected ? '0 0 4px #0072B2' : undefined,
                         transition: 'border 0.1s, box-shadow 0.1s, top 0.3s ease',
-                        textDecoration: m.isUnknown ? 'underline wavy #b00' : undefined,
+                        textDecoration: m.isUnknown ? 'underline wavy #00AAFF' : undefined,
                         zIndex: 2,
                         whiteSpace: 'nowrap',
                       }}
@@ -454,7 +477,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                       }}
                       title={tooltipParts}
                     >
-                      {m.word}
+                      {isSentenceStart(i) ? capitalizeWord(m.word) : m.word}
                     </span>
                   );
                 })}
@@ -572,7 +595,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                               style={{
                                 padding: '2px 6px',
                                 fontSize: '11px',
-                                backgroundColor: unknownTokenIndices.includes(index) ? '#ffcccc' : '#f8f8f8',
+                                backgroundColor: unknownTokenIndices.includes(index) ? '#e6f3ff' : '#f8f8f8',
                                 border: unknownTokenIndices.includes(index) ? '1px solid #ff6666' : '1px solid #ddd',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
@@ -632,7 +655,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         </button>
         {showWordHeatmap && (
           <div style={{marginTop: 16}}>
-            <b>Word Attention Heatmap (red = low, white = high):</b>
+            <b>Word Attention Heatmap (blue = low, white = high):</b>
             <table style={{ borderCollapse: 'collapse', marginTop: 8 }}>
               <thead>
                 <tr>
@@ -647,7 +670,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <tr key={i}>
                     <th style={{ textAlign: 'right', fontSize: '0.9em', padding: '2px 4px' }}>{displayWords[i]}</th>
                     {row.map((val, j) => (
-                      <td key={j} style={{ background: getRedWhiteColor(val, attMin, attMax), width: 24, height: 24, textAlign: 'center', fontSize: '0.8em' }}>
+                      <td key={j} style={{ background: getBlueWhiteColor(val, attMin, attMax), width: 60, height: 30, textAlign: 'center', fontSize: '0.8em' }}>
                         {val.toFixed(2)}
                       </td>
                     ))}

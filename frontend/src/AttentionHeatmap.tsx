@@ -40,20 +40,27 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Compute original min/max for received from the original attention matrix (before zeroing unknowns)
   const originalReceived = words.map((_, i) => attention.reduce((sum, row) => sum + row[i], 0));
-  const originalMinReceived = Math.min(...originalReceived);
-  const originalMaxReceived = Math.max(...originalReceived);
+  
+  // Filter out punctuation from originalReceived for normalization calculation
+  const nonPunctuationOriginalReceived = originalReceived.filter((_, i) => !punctuationIndices.includes(i));
+  const originalMinReceived = nonPunctuationOriginalReceived.length > 0 ? Math.min(...nonPunctuationOriginalReceived) : 0;
+  const originalMaxReceived = nonPunctuationOriginalReceived.length > 0 ? Math.max(...nonPunctuationOriginalReceived) : 1;
 
-  // For normProvided, exclude unknowns from min/max and set their normProvided=0
-  const nonUnknownIndices = words.map((_, i) => i).filter(i => !unknownTokenIndices.includes(i));
-  const minProvided = nonUnknownIndices.length > 0 ? Math.min(...nonUnknownIndices.map(i => provided[i])) : 0;
-  const maxProvided = nonUnknownIndices.length > 0 ? Math.max(...nonUnknownIndices.map(i => provided[i])) : 1;
+  // For normProvided, exclude unknowns AND punctuation from min/max calculation
+  const nonUnknownNonPunctuationIndices = words.map((_, i) => i).filter(i => !unknownTokenIndices.includes(i) && !punctuationIndices.includes(i));
+  const minProvided = nonUnknownNonPunctuationIndices.length > 0 ? Math.min(...nonUnknownNonPunctuationIndices.map(i => provided[i])) : 0;
+  const maxProvided = nonUnknownNonPunctuationIndices.length > 0 ? Math.max(...nonUnknownNonPunctuationIndices.map(i => provided[i])) : 1;
   let normProvided = provided.map((v, i) =>
-    unknownTokenIndices.includes(i)
-      ? 0
+    unknownTokenIndices.includes(i) || punctuationIndices.includes(i)
+      ? 0  // Set both unknowns and punctuation to 0
       : (maxProvided - minProvided ? (v - minProvided) / (maxProvided - minProvided) : 0)
   );
-  // For normReceived, use the original min/max (before zeroing unknowns)
-  let normReceived = received.map(v => (originalMaxReceived - originalMinReceived ? (v - originalMinReceived) / (originalMaxReceived - originalMinReceived) : 0));
+  // For normReceived, exclude punctuation from normalization range
+  let normReceived = received.map((v, i) => 
+    punctuationIndices.includes(i)
+      ? 0  // Set punctuation to 0
+      : (originalMaxReceived - originalMinReceived ? (v - originalMinReceived) / (originalMaxReceived - originalMinReceived) : 0)
+  );
 
   // If a word is marked as known, set its normReceived to 1 and distribute its previous normReceived among its providers proportionally
   if (knownTokenIndices && knownTokenIndices.length > 0) {
@@ -104,14 +111,24 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // Use unique ids for each word position
   const wordObjs = displayWords.map((word, idx) => ({ word, index: idx }));
   
-  // Calculate raw sums of original received and provided scores
-  const rawSums = wordObjs.map(({ index }) => totalReceived[index] + totalProvided[index]);
+  // Calculate raw sums of original received and provided scores (excluding punctuation)
+  // For unknown words, use only their totalReceived score
+  const rawSums = wordObjs.map(({ index }) => 
+    unknownTokenIndices.includes(index) 
+      ? totalReceived[index]  // Unknown words: use only received score
+      : totalReceived[index] + totalProvided[index]  // Normal words: use sum
+  );
   
-  // Normalize the raw sums to 0-1 range
-  const minRawSum = Math.min(...rawSums);
-  const maxRawSum = Math.max(...rawSums);
-  const normalizedSums = rawSums.map(sum => 
-    (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
+  // Filter out punctuation from raw sums for normalization calculation
+  const nonPunctuationRawSums = rawSums.filter((_, i) => !punctuationIndices.includes(i));
+  
+  // Normalize the raw sums to 0-1 range using only non-punctuation values
+  const minRawSum = nonPunctuationRawSums.length > 0 ? Math.min(...nonPunctuationRawSums) : 0;
+  const maxRawSum = nonPunctuationRawSums.length > 0 ? Math.max(...nonPunctuationRawSums) : 1;
+  const normalizedSums = rawSums.map((sum, i) => 
+    punctuationIndices.includes(i) 
+      ? 0  // Set punctuation normSum to 0
+      : (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
   );
   
   // Compute metrics for each word position ONCE, in original order

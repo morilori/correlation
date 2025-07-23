@@ -103,15 +103,26 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Use unique ids for each word position
   const wordObjs = displayWords.map((word, idx) => ({ word, index: idx }));
+  
+  // Calculate raw sums of original received and provided scores
+  const rawSums = wordObjs.map(({ index }) => totalReceived[index] + totalProvided[index]);
+  
+  // Normalize the raw sums to 0-1 range
+  const minRawSum = Math.min(...rawSums);
+  const maxRawSum = Math.max(...rawSums);
+  const normalizedSums = rawSums.map(sum => 
+    (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
+  );
+  
   // Compute metrics for each word position ONCE, in original order
-  const metrics = wordObjs.map(({ word, index }) => ({
+  const metrics = wordObjs.map(({ word, index }, i) => ({
     word,
     index,
     received: totalReceived[index],
     provided: totalProvided[index],
     normProvided: normProvided[index],
     normReceived: normReceived[index],
-    normSum: normProvided[index] + normReceived[index],
+    normSum: normalizedSums[i],
     isUnknown: unknownTokenIndices.includes(index),
     isKnown: knownTokenIndices.includes(index),
   }));
@@ -137,10 +148,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     const max = Math.max(...arr);
     return (v: number) => {
       const t = (v - min) / (max - min + 1e-8);
-      // Blue (#00AAFF - low) to white (high)
-      const r = Math.round(0 + (255 - 0) * t);     // 0 → 255
-      const g = Math.round(170 + (255 - 170) * t); // 170 → 255 (AA in hex = 170 in decimal)
-      const b = 255;                               // Always 255
+      // White (low) to Blue (#00AAFF - high)
+      const r = Math.round(255 - (255 - 0) * t);     // 255 → 0
+      const g = Math.round(255 - (255 - 170) * t);   // 255 → 170 (AA in hex = 170 in decimal)
+      const b = 255;                                  // Always 255
       return `rgb(${r},${g},${b})`;
     };
   }
@@ -181,11 +192,11 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Option to color by band
   const [colorByBand, setColorByBand] = useState(false);
-  // Band colors: above=white, between=light blue, below=blue
+  // Band colors: above=blue, between=light blue, below=white
   const bandColors = {
-    above: '#fff', // white
+    above: '#00AAFF', // strong blue (highest attention)
     between: '#cce6ff', // light blue (middle)
-    below: '#00AAFF', // strong blue
+    below: '#fff', // white (lowest attention)
   };
 
   // Compute thresholds so that upperBandPercent% of words are above upperThreshold, and lowerBandPercent% below lowerThreshold
@@ -216,13 +227,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
 
-  // Blue-to-white color scale for heatmap (matching #00AAFF theme)
+  // White-to-blue color scale for heatmap (matching #00AAFF theme)
   function getBlueWhiteColor(value: number, min: number, max: number) {
     const t = (value - min) / (max - min + 1e-8);
-    // Interpolate from #00AAFF (low) to white (high)
-    const r = Math.round(0 + (255 - 0) * t);     // 0 → 255
-    const g = Math.round(170 + (255 - 170) * t); // 170 → 255 (AA in hex = 170 in decimal)
-    const b = 255;                               // Always 255
+    // Interpolate from white (low) to #00AAFF (high)
+    const r = Math.round(255 - (255 - 0) * t);     // 255 → 0
+    const g = Math.round(255 - (255 - 170) * t);   // 255 → 170 (AA in hex = 170 in decimal)
+    const b = 255;                                  // Always 255
     return `rgb(${r},${g},${b})`;
   }
 
@@ -574,12 +585,12 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {displayWords.map(({ word, normProvided, normReceived, index }) => (
+                    {displayWords.map(({ word, normProvided, normReceived, normSum, index }) => (
                       <tr key={index}>
                         <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '25%', wordWrap: 'break-word'}}>{word}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normReceived.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{(normProvided + normReceived).toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normSum.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'center', width: '15%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button
@@ -655,7 +666,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         </button>
         {showWordHeatmap && (
           <div style={{marginTop: 16}}>
-            <b>Word Attention Heatmap (blue = low, white = high):</b>
+            <b>Word Attention Heatmap (white = low, blue = high):</b>
             <table style={{ borderCollapse: 'collapse', marginTop: 8 }}>
               <thead>
                 <tr>

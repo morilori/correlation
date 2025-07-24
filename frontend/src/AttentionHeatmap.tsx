@@ -209,12 +209,12 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
   // Option to color by band
   const [colorByBand, setColorByBand] = useState(false);
-  // Band colors: above=blue, between=light blue, below=white
-  const bandColors = {
-    above: '#00AAFF', // strong blue (highest attention)
-    between: '#cce6ff', // light blue (middle)
-    below: '#fff', // white (lowest attention)
-  };
+  // Band colors: configurable via color pickers
+  const [bandColors, setBandColors] = useState({
+    above: '#0088CC', // upper band (highest attention)
+    between: '#00AAFF', // middle band
+    below: '#CCE8FF', // lower band (lowest attention)
+  });
 
   // Compute thresholds so that upperBandPercent% of words are above upperThreshold, and lowerBandPercent% below lowerThreshold
   function computePercentile(arr: number[], percent: number) {
@@ -323,195 +323,404 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           </label>
         </div>
 
-        <div style={{marginTop: 8, background: '#f8f8f8', padding: 20, borderRadius: 6, fontFamily: 'monospace', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
-          {(() => {
-            // Constants
-            const BAND_HEIGHT_EM = 2.5;
-            const ROWS_PER_LINE = 3;
-            const LINE_GAP_EM = 4;
-            const WORD_GAP = 8;
-            
-            // Helper functions
-            const isSentenceEnd = (word: string) => /[.!?]$/.test(word.trim());
-            const getWordWidth = (word: string, index: number) => {
-              const displayWord = isSentenceStart(index) ? capitalizeWord(word) : word;
-              return displayWord.length * 9 + 14;
-            };
-            
-            // Helper function to determine if a word should be capitalized (sentence beginning)
-            const isSentenceStart = (index: number): boolean => {
-              if (index === 0) return true; // First word is always sentence start
-              // Check if previous word ends with sentence punctuation
-              for (let i = index - 1; i >= 0; i--) {
-                const prevWord = metrics[i].word;
-                if (isSentenceEnd(prevWord)) return true;
-                // If we hit a non-punctuation word, this is not a sentence start
-                if (!/^[^\w]*$/.test(prevWord)) return false;
-              }
-              return false;
-            };
-            
-            // Helper function to capitalize first letter of a word
-            const capitalizeWord = (word: string): string => {
-              if (!word || word.length === 0) return word;
-              return word.charAt(0).toUpperCase() + word.slice(1);
-            };
-            
-            // Pre-calculate all word positions and line data in a single pass
-            const wordPositions: Array<{
-              lineNumber: number;
-              leftOffset: number;
-              verticalPosition: number;
-              band: 'above' | 'between' | 'below';
-            }> = [];
-            const lineWidths: number[] = [];
-            
-            let currentLine = 0;
-            let currentLineOffset = 0;
-            let maxLineNumber = 0;
-            
-            // Single pass calculation
-            metrics.forEach((m, i) => {
-              const wordWidth = getWordWidth(m.word, i);
+        {/* Band color selectors */}
+        {colorByBand && (
+          <div style={{margin: '8px 0', fontSize: '0.9em', display: 'flex', alignItems: 'center', gap: 16, padding: '8px', backgroundColor: '#f5f5f5', borderRadius: '4px'}}>
+            <span style={{fontWeight: 'bold', marginRight: 8}}>Band Colors:</span>
+            <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
+              <label style={{fontSize: '0.85em'}}>Upper:</label>
+              <input
+                type="color"
+                value={bandColors.above}
+                onChange={e => setBandColors(prev => ({...prev, above: e.target.value}))}
+                style={{width: '30px', height: '24px', border: 'none', borderRadius: '3px', cursor: 'pointer'}}
+                title="Color for highest attention words"
+              />
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
+              <label style={{fontSize: '0.85em'}}>Middle:</label>
+              <input
+                type="color"
+                value={bandColors.between}
+                onChange={e => setBandColors(prev => ({...prev, between: e.target.value}))}
+                style={{width: '30px', height: '24px', border: 'none', borderRadius: '3px', cursor: 'pointer'}}
+                title="Color for medium attention words"
+              />
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 4}}>
+              <label style={{fontSize: '0.85em'}}>Lower:</label>
+              <input
+                type="color"
+                value={bandColors.below}
+                onChange={e => setBandColors(prev => ({...prev, below: e.target.value}))}
+                style={{width: '30px', height: '24px', border: 'none', borderRadius: '3px', cursor: 'pointer'}}
+                title="Color for lowest attention words"
+              />
+            </div>
+            <button
+              onClick={() => setBandColors({
+                above: '#0088CC',
+                between: '#00AAFF', 
+                below: '#CCE8FF'
+              })}
+              style={{
+                fontSize: '0.8em',
+                padding: '4px 8px',
+                backgroundColor: '#fff',
+                border: '1px solid #ddd',
+                borderRadius: '3px',
+                cursor: 'pointer',
+                marginLeft: 8
+              }}
+              title="Reset to default colors"
+            >
+              Reset
+            </button>
+          </div>
+        )}
+
+        <div style={{marginTop: 8, background: 'white', padding: 20, borderRadius: 6, fontFamily: 'Verdana, sans-serif', fontWeight: 'normal', fontSize: '12px', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
+          <div style={{display: 'flex', flexWrap: 'wrap', columnGap: '0px', rowGap: '8px', lineHeight: '1.8'}}>
+            {metrics.map((m, i) => {
               const isPunctuation = punctuationIndices.includes(i);
+              const isSelected = selectedTokenIndices.includes(i);
               const value = originalTextColorArr[i];
               
-              // Determine position and band
-              let verticalPosition = 1;
+              // Determine band for styling
               let band: 'above' | 'between' | 'below' = 'between';
-              
               if (!isPunctuation) {
                 if (value >= upperThreshold) {
-                  verticalPosition = 0;
                   band = 'above';
                 } else if (value <= lowerThreshold) {
-                  verticalPosition = 2;
                   band = 'below';
                 }
               }
               
-              wordPositions.push({
-                lineNumber: currentLine,
-                leftOffset: currentLineOffset,
-                verticalPosition,
-                band
-              });
+              // Calculate attention directions for gradients
+              let leftAttention = 0;
+              let rightAttention = 0;
               
-              currentLineOffset += wordWidth + WORD_GAP;
-              lineWidths[currentLine] = Math.max(lineWidths[currentLine] || 0, currentLineOffset);
-              
-              if (isSentenceEnd(m.word)) {
-                maxLineNumber = Math.max(maxLineNumber, currentLine);
-                currentLine++;
-                currentLineOffset = 0;
+              if (!isPunctuation) {
+                // Find sentence boundaries
+                let sentenceStart = 0;
+                let sentenceEnd = metrics.length - 1;
+                
+                for (let j = i - 1; j >= 0; j--) {
+                  if (/[.!?]$/.test(metrics[j].word.trim())) {
+                    sentenceStart = j + 1;
+                    break;
+                  }
+                }
+                
+                for (let j = i + 1; j < metrics.length; j++) {
+                  if (/[.!?]$/.test(metrics[j].word.trim())) {
+                    sentenceEnd = j;
+                    break;
+                  }
+                }
+                
+                // Calculate directional attention
+                for (let j = sentenceStart; j <= sentenceEnd; j++) {
+                  if (j === i) continue;
+                  const attentionValue = displayAttention[j][i];
+                  
+                  if (j < i) {
+                    leftAttention += attentionValue;
+                  } else {
+                    rightAttention += attentionValue;
+                  }
+                }
               }
-            });
-            
-            const totalHeightEm = (maxLineNumber + 1) * (BAND_HEIGHT_EM * ROWS_PER_LINE) + maxLineNumber * LINE_GAP_EM;
-            
-            // Generate band elements efficiently
-            const bands: React.ReactElement[] = [];
-            for (let l = 0; l <= maxLineNumber; l++) {
-              const lineOffsetEm = l * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
-              const width = Math.max(lineWidths[l] || 200, 200);
               
-              const bandConfigs = [
-                { top: lineOffsetEm, style: { border: '1.5px solid #bbb', borderRadius: '6px 6px 0 0' } },
-                { top: lineOffsetEm + BAND_HEIGHT_EM, style: { borderLeft: '1.5px solid #bbb', borderRight: '1.5px solid #bbb' } },
-                { top: lineOffsetEm + 2 * BAND_HEIGHT_EM, style: { border: '1.5px solid #bbb', borderRadius: '0 0 6px 6px' } }
-              ];
+              // Determine dominant direction
+              let dominantDirection = 'none';
+              if (leftAttention > rightAttention && leftAttention > 0) {
+                dominantDirection = 'left';
+              } else if (rightAttention > leftAttention && rightAttention > 0) {
+                dominantDirection = 'right';
+              }
               
-              bandConfigs.forEach((config, idx) => {
-                bands.push(
-                  <div key={`${l}-${idx}`} style={{
-                    position: 'absolute',
-                    left: 0,
-                    width: `${width}px`,
-                    top: `${config.top}em`,
-                    height: `${BAND_HEIGHT_EM}em`,
-                    background: 'none',
-                    zIndex: 10,
-                    boxSizing: 'border-box',
-                    pointerEvents: 'none',
-                    ...config.style
-                  }} />
-                );
-              });
-            }
-            
-            return (
-              <div style={{position: 'relative', minHeight: `${totalHeightEm}em`, width: 'max-content', lineHeight: '1.8'}}>
-                {bands}
-                {metrics.map((m, i) => {
-                  const pos = wordPositions[i];
-                  const wordWidth = getWordWidth(m.word, i);
-                  const topEm = pos.verticalPosition * BAND_HEIGHT_EM + pos.lineNumber * (BAND_HEIGHT_EM * ROWS_PER_LINE + LINE_GAP_EM);
-                  const isPunctuation = punctuationIndices.includes(i);
-                  const isSelected = selectedTokenIndices.includes(i);
+              // Create background with gradient
+              const createBackground = () => {
+                if (isPunctuation) return 'white';
+                
+                const baseColor = colorByBand 
+                  ? bandColors[band]
+                  : originalTextColorScale(originalTextColorArr[i]);
+                
+                if (dominantDirection === 'none') return baseColor;
+                
+                // Calculate previous and next dominant directions for gradient logic
+                const getPrevDirection = () => {
+                  if (i === 0 || punctuationIndices.includes(i - 1)) return 'none';
                   
-                  // Simplified background calculation
-                  const background = isPunctuation 
-                    ? '#cce6ff'  // Same as middle band color
-                    : colorByBand 
-                      ? bandColors[pos.band]
-                      : originalTextColorScale(originalTextColorArr[i]);
+                  let prevLeft = 0, prevRight = 0;
                   
-                  // Optimized tooltip generation
-                  const bandLabel = pos.band === 'above' ? 'above threshold' : 
-                                   pos.band === 'below' ? 'below threshold' : 'within thresholds';
+                  // Find sentence boundaries for previous word
+                  let sentenceStart = 0, sentenceEnd = metrics.length - 1;
                   
-                  const tooltipParts = [
-                    `Norm sum: ${m.normSum.toFixed(3)} (${bandLabel})`,
-                    m.isUnknown && 'Unknown word: only receives attention, does not provide.',
-                    selectedTokenIndices.length > 0 && customColorArr && 
-                      `Attention ${scoreSortMetric === 'received' ? 'received from' : 'given to'} selected: ${customColorArr[i].toFixed(3)}`,
-                    selectedTokenIndices.length === 0 && 
-                      `Norm. ${scoreSortMetric}: ${(m as any)[scoreSortMetric === 'normSum' ? 'normSum' : 
-                                                                scoreSortMetric === 'provided' ? 'normProvided' : 'normReceived'].toFixed(3)}`
-                  ].filter(Boolean).join(' | ');
+                  for (let j = i - 2; j >= 0; j--) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceStart = j + 1;
+                      break;
+                    }
+                  }
                   
-                  return (
-                    <span
-                      key={m.index}
-                      style={{
-                        position: 'absolute',
-                        left: `${pos.leftOffset}px`,
-                        top: `${topEm}em`,
-                        background,
-                        color: m.isUnknown ? '#00AAFF' : '#000',
-                        borderRadius: 4,
-                        width: `${wordWidth}px`,
-                        textAlign: 'center',
-                        padding: '3px 0',
-                        display: 'inline-block',
-                        fontWeight: 500,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        cursor: 'pointer',
-                        border: isSelected ? '2px solid #0072B2' : '2px solid transparent',
-                        boxShadow: isSelected ? '0 0 4px #0072B2' : undefined,
-                        transition: 'border 0.1s, box-shadow 0.1s, top 0.3s ease',
-                        textDecoration: m.isUnknown ? 'underline wavy #00AAFF' : undefined,
-                        zIndex: 2,
-                        whiteSpace: 'nowrap',
-                      }}
-                      onClick={() => {
-                        if (!setSelectedTokenIndices) return;
-                        setSelectedTokenIndices(
-                          isSelected 
-                            ? selectedTokenIndices.filter(idx => idx !== i)
-                            : [...selectedTokenIndices, i]
-                        );
-                      }}
-                      title={tooltipParts}
-                    >
-                      {isSentenceStart(i) ? capitalizeWord(m.word) : m.word}
-                    </span>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                  for (let j = i; j < metrics.length; j++) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceEnd = j;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = sentenceStart; j <= sentenceEnd; j++) {
+                    if (j === i - 1) continue;
+                    const attentionValue = displayAttention[j][i - 1];
+                    if (j < i - 1) prevLeft += attentionValue;
+                    else prevRight += attentionValue;
+                  }
+                  
+                  if (prevLeft > prevRight && prevLeft > 0) return 'left';
+                  if (prevRight > prevLeft && prevRight > 0) return 'right';
+                  return 'none';
+                };
+                
+                const getNextDirection = () => {
+                  if (i === metrics.length - 1 || punctuationIndices.includes(i + 1)) return 'none';
+                  
+                  let nextLeft = 0, nextRight = 0;
+                  
+                  // Find sentence boundaries for next word
+                  let sentenceStart = 0, sentenceEnd = metrics.length - 1;
+                  
+                  for (let j = i; j >= 0; j--) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceStart = j + 1;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = i + 2; j < metrics.length; j++) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceEnd = j;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = sentenceStart; j <= sentenceEnd; j++) {
+                    if (j === i + 1) continue;
+                    const attentionValue = displayAttention[j][i + 1];
+                    if (j < i + 1) nextLeft += attentionValue;
+                    else nextRight += attentionValue;
+                  }
+                  
+                  if (nextLeft > nextRight && nextLeft > 0) return 'left';
+                  if (nextRight > nextLeft && nextRight > 0) return 'right';
+                  return 'none';
+                };
+                
+                const prevDirection = getPrevDirection();
+                const nextDirection = getNextDirection();
+                
+                switch (dominantDirection) {
+                  case 'left':
+                    // Only apply gradient if this is the first word in a left sequence
+                    const isFirstInLeftSequence = prevDirection !== 'left';
+                    return isFirstInLeftSequence 
+                      ? `linear-gradient(to right, white, ${baseColor})` 
+                      : baseColor;
+                  case 'right':
+                    // Only apply gradient if this is the last word in a right sequence
+                    const isLastInRightSequence = nextDirection !== 'right';
+                    return isLastInRightSequence 
+                      ? `linear-gradient(to left, white, ${baseColor})` 
+                      : baseColor;
+                  default:
+                    return baseColor;
+                }
+              };
+              
+              // Get border radius - only apply radius at sequence boundaries
+              const getBorderRadius = () => {
+                if (isPunctuation || dominantDirection === 'none') return '3px';
+                
+                // Check if this is the start or end of a sequence with the same direction
+                const prevWord = i > 0 ? metrics[i - 1] : null;
+                const nextWord = i < metrics.length - 1 ? metrics[i + 1] : null;
+                
+                // Calculate previous and next dominant directions
+                const getPrevDirection = () => {
+                  if (!prevWord || punctuationIndices.includes(i - 1)) return 'none';
+                  
+                  let prevLeft = 0, prevRight = 0;
+                  
+                  // Find sentence boundaries for previous word
+                  let sentenceStart = 0, sentenceEnd = metrics.length - 1;
+                  
+                  for (let j = i - 2; j >= 0; j--) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceStart = j + 1;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = i; j < metrics.length; j++) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceEnd = j;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = sentenceStart; j <= sentenceEnd; j++) {
+                    if (j === i - 1) continue;
+                    const attentionValue = displayAttention[j][i - 1];
+                    if (j < i - 1) prevLeft += attentionValue;
+                    else prevRight += attentionValue;
+                  }
+                  
+                  if (prevLeft > prevRight && prevLeft > 0) return 'left';
+                  if (prevRight > prevLeft && prevRight > 0) return 'right';
+                  return 'none';
+                };
+                
+                const getNextDirection = () => {
+                  if (!nextWord || punctuationIndices.includes(i + 1)) return 'none';
+                  
+                  let nextLeft = 0, nextRight = 0;
+                  
+                  // Find sentence boundaries for next word
+                  let sentenceStart = 0, sentenceEnd = metrics.length - 1;
+                  
+                  for (let j = i; j >= 0; j--) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceStart = j + 1;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = i + 2; j < metrics.length; j++) {
+                    if (/[.!?]$/.test(metrics[j].word.trim())) {
+                      sentenceEnd = j;
+                      break;
+                    }
+                  }
+                  
+                  for (let j = sentenceStart; j <= sentenceEnd; j++) {
+                    if (j === i + 1) continue;
+                    const attentionValue = displayAttention[j][i + 1];
+                    if (j < i + 1) nextLeft += attentionValue;
+                    else nextRight += attentionValue;
+                  }
+                  
+                  if (nextLeft > nextRight && nextLeft > 0) return 'left';
+                  if (nextRight > nextLeft && nextRight > 0) return 'right';
+                  return 'none';
+                };
+                
+                const prevDirection = getPrevDirection();
+                const nextDirection = getNextDirection();
+                
+                if (dominantDirection === 'left') {
+                  // Only apply right radius if this is the last word in a left sequence
+                  const isLastInSequence = nextDirection !== 'left';
+                  return isLastInSequence ? '0px 15px 15px 0px' : '0px';
+                } else if (dominantDirection === 'right') {
+                  // Only apply left radius if this is the first word in a right sequence  
+                  const isFirstInSequence = prevDirection !== 'right';
+                  return isFirstInSequence ? '15px 0px 0px 15px' : '0px';
+                }
+                
+                return '3px';
+              };
+              
+              // Get font styling
+              const getFontStyle = () => {
+                if (isPunctuation) {
+                  return { fontWeight: 'normal', fontStyle: 'normal' };
+                }
+                
+                switch (band) {
+                  case 'above':
+                    return { fontWeight: 'bold', fontStyle: 'normal' };
+                  case 'below':
+                    return { fontWeight: 'normal', fontStyle: 'italic' };
+                  default:
+                    return { fontWeight: 'normal', fontStyle: 'normal' };
+                }
+              };
+              
+              const fontStyle = getFontStyle();
+              const maxAttention = Math.max(leftAttention, rightAttention);
+              
+              // Capitalize first word of sentences
+              const isSentenceStart = (index: number): boolean => {
+                if (index === 0) return true;
+                for (let j = index - 1; j >= 0; j--) {
+                  const prevWord = metrics[j].word;
+                  if (/[.!?]$/.test(prevWord.trim())) return true;
+                  if (!/^[^\w]*$/.test(prevWord)) return false;
+                }
+                return false;
+              };
+              
+              const capitalizeWord = (word: string): string => {
+                if (!word || word.length === 0) return word;
+                return word.charAt(0).toUpperCase() + word.slice(1);
+              };
+              
+              // Create tooltip
+              const bandLabel = band === 'above' ? 'above threshold' : 
+                               band === 'below' ? 'below threshold' : 'within thresholds';
+              
+              const directionalInfo = maxAttention > 0 
+                ? `Most attention from: ${dominantDirection} (${maxAttention.toFixed(3)})`
+                : 'No significant horizontal attention';
+              
+              const tooltipParts = [
+                `Norm sum: ${m.normSum.toFixed(3)} (${bandLabel})`,
+                directionalInfo,
+                m.isUnknown && 'Unknown word: only receives attention, does not provide.',
+                selectedTokenIndices.length > 0 && customColorArr && 
+                  `Attention ${scoreSortMetric === 'received' ? 'received from' : 'given to'} selected: ${customColorArr[i].toFixed(3)}`,
+                selectedTokenIndices.length === 0 && 
+                  `Norm. ${scoreSortMetric}: ${(m as any)[scoreSortMetric === 'normSum' ? 'normSum' : 
+                                                            scoreSortMetric === 'provided' ? 'normProvided' : 'normReceived'].toFixed(3)}`
+              ].filter(Boolean).join(' | ');
+              
+              return (
+                <span
+                  key={m.index}
+                  style={{
+                    background: createBackground(),
+                    color: m.isUnknown ? '#00AAFF' : (isPunctuation ? '#000' : '#000'),
+                    borderRadius: getBorderRadius(),
+                    textAlign: 'center',
+                    padding: isSelected ? '3px 6px' : '5px 8px',
+                    display: 'inline-block',
+                    fontWeight: fontStyle.fontWeight,
+                    fontStyle: fontStyle.fontStyle,
+                    cursor: 'pointer',
+                    border: isSelected ? '2px solid #0072B2' : 'none',
+                    boxShadow: isSelected ? '0 0 4px #0072B2' : undefined,
+                    transition: 'border 0.1s, box-shadow 0.1s',
+                    textDecoration: m.isUnknown ? 'underline wavy #00AAFF' : undefined,
+                    whiteSpace: 'nowrap',
+                  }}
+                  onClick={() => {
+                    if (!setSelectedTokenIndices) return;
+                    setSelectedTokenIndices(
+                      isSelected 
+                        ? selectedTokenIndices.filter(idx => idx !== i)
+                        : [...selectedTokenIndices, i]
+                    );
+                  }}
+                  title={tooltipParts}
+                >
+                  {isSentenceStart(i) ? capitalizeWord(m.word) : m.word}
+                </span>
+              );
+            })}
+          </div>
         </div>
         {/* Removed ScoreLineGraph component */}
       </div>

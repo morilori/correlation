@@ -211,9 +211,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   const [colorByBand, setColorByBand] = useState(false);
   // Band colors: configurable via color pickers
   const [bandColors, setBandColors] = useState({
-    above: '#0088CC', // upper band (highest attention)
-    between: '#00AAFF', // middle band
-    below: '#CCE8FF', // lower band (lowest attention)
+    above: '#00AAFF', // upper band (highest attention)
+    between: '#99DDFF', // middle band
+    below: '#CCEEFF', // lower band (lowest attention)
   });
 
   // Compute thresholds so that upperBandPercent% of words are above upperThreshold, and lowerBandPercent% below lowerThreshold
@@ -359,9 +359,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             </div>
             <button
               onClick={() => setBandColors({
-                above: '#0088CC',
-                between: '#00AAFF', 
-                below: '#CCE8FF'
+                above: '#00AAFF',
+                between: '#99DDFF', 
+                below: '#CCEEFF'
               })}
               style={{
                 fontSize: '0.8em',
@@ -380,7 +380,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         )}
 
         <div style={{marginTop: 8, background: 'white', padding: 20, borderRadius: 6, fontFamily: 'Verdana, sans-serif', fontWeight: 'normal', fontSize: '12px', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
-          <div style={{display: 'flex', flexWrap: 'wrap', columnGap: '0px', rowGap: '8px', lineHeight: '1.8'}}>
+          <div style={{display: 'flex', flexWrap: 'wrap', columnGap: '0px', rowGap: '10px', lineHeight: '1.8'}}>
             {metrics.map((m, i) => {
               const isPunctuation = punctuationIndices.includes(i);
               const isSelected = selectedTokenIndices.includes(i);
@@ -444,9 +444,132 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               const createBackground = () => {
                 if (isPunctuation) return 'white';
                 
-                const baseColor = colorByBand 
-                  ? bandColors[band]
-                  : originalTextColorScale(originalTextColorArr[i]);
+                let baseColor;
+                
+                if (colorByBand && dominantDirection !== 'none') {
+                  // For combined sequences, calculate averaged color across all words in the sequence
+                  const sequenceIndices = [];
+                  
+                  // Find all words in the same direction sequence
+                  let sequenceStart = i;
+                  let sequenceEnd = i;
+                  
+                  // Find start of sequence
+                  for (let j = i - 1; j >= 0; j--) {
+                    if (punctuationIndices.includes(j)) break;
+                    
+                    // Calculate direction for word j
+                    let jLeftAttention = 0, jRightAttention = 0;
+                    let jSentenceStart = 0, jSentenceEnd = metrics.length - 1;
+                    
+                    for (let k = j - 1; k >= 0; k--) {
+                      if (/[.!?]$/.test(metrics[k].word.trim())) {
+                        jSentenceStart = k + 1;
+                        break;
+                      }
+                    }
+                    for (let k = j + 1; k < metrics.length; k++) {
+                      if (/[.!?]$/.test(metrics[k].word.trim())) {
+                        jSentenceEnd = k;
+                        break;
+                      }
+                    }
+                    
+                    for (let k = jSentenceStart; k <= jSentenceEnd; k++) {
+                      if (k === j) continue;
+                      const attentionValue = displayAttention[k][j];
+                      if (k < j) jLeftAttention += attentionValue;
+                      else jRightAttention += attentionValue;
+                    }
+                    
+                    let jDirection = 'none';
+                    if (jLeftAttention > jRightAttention && jLeftAttention > 0) jDirection = 'left';
+                    else if (jRightAttention > jLeftAttention && jRightAttention > 0) jDirection = 'right';
+                    
+                    if (jDirection === dominantDirection) {
+                      sequenceStart = j;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  // Find end of sequence
+                  for (let j = i + 1; j < metrics.length; j++) {
+                    if (punctuationIndices.includes(j)) break;
+                    
+                    // Calculate direction for word j
+                    let jLeftAttention = 0, jRightAttention = 0;
+                    let jSentenceStart = 0, jSentenceEnd = metrics.length - 1;
+                    
+                    for (let k = j - 1; k >= 0; k--) {
+                      if (/[.!?]$/.test(metrics[k].word.trim())) {
+                        jSentenceStart = k + 1;
+                        break;
+                      }
+                    }
+                    for (let k = j + 1; k < metrics.length; k++) {
+                      if (/[.!?]$/.test(metrics[k].word.trim())) {
+                        jSentenceEnd = k;
+                        break;
+                      }
+                    }
+                    
+                    for (let k = jSentenceStart; k <= jSentenceEnd; k++) {
+                      if (k === j) continue;
+                      const attentionValue = displayAttention[k][j];
+                      if (k < j) jLeftAttention += attentionValue;
+                      else jRightAttention += attentionValue;
+                    }
+                    
+                    let jDirection = 'none';
+                    if (jLeftAttention > jRightAttention && jLeftAttention > 0) jDirection = 'left';
+                    else if (jRightAttention > jLeftAttention && jRightAttention > 0) jDirection = 'right';
+                    
+                    if (jDirection === dominantDirection) {
+                      sequenceEnd = j;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  // Collect all indices in the sequence
+                  for (let j = sequenceStart; j <= sequenceEnd; j++) {
+                    if (!punctuationIndices.includes(j)) {
+                      sequenceIndices.push(j);
+                    }
+                  }
+                  
+                  // Calculate average band color for the sequence
+                  if (sequenceIndices.length > 1) {
+                    let totalR = 0, totalG = 0, totalB = 0;
+                    
+                    sequenceIndices.forEach(idx => {
+                      const seqValue = originalTextColorArr[idx];
+                      let seqBand: 'above' | 'between' | 'below' = 'between';
+                      if (seqValue >= upperThreshold) seqBand = 'above';
+                      else if (seqValue <= lowerThreshold) seqBand = 'below';
+                      
+                      const seqColor = bandColors[seqBand];
+                      const rgb = seqColor.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+                      if (rgb) {
+                        totalR += parseInt(rgb[1], 16);
+                        totalG += parseInt(rgb[2], 16);
+                        totalB += parseInt(rgb[3], 16);
+                      }
+                    });
+                    
+                    const avgR = Math.round(totalR / sequenceIndices.length);
+                    const avgG = Math.round(totalG / sequenceIndices.length);
+                    const avgB = Math.round(totalB / sequenceIndices.length);
+                    baseColor = `rgb(${avgR}, ${avgG}, ${avgB})`;
+                  } else {
+                    baseColor = bandColors[band];
+                  }
+                } else {
+                  baseColor = colorByBand 
+                    ? bandColors[band]
+                    : originalTextColorScale(originalTextColorArr[i]);
+                }
                 
                 if (dominantDirection === 'none') return baseColor;
                 
@@ -695,7 +818,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     color: m.isUnknown ? '#00AAFF' : (isPunctuation ? '#000' : '#000'),
                     borderRadius: getBorderRadius(),
                     textAlign: 'center',
-                    padding: isSelected ? '3px 6px' : '5px 8px',
+                    padding: isSelected ? '3px 6px' : '4px 8px',
                     display: 'inline-block',
                     fontWeight: fontStyle.fontWeight,
                     fontStyle: fontStyle.fontStyle,

@@ -791,6 +791,11 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 return word.charAt(0).toUpperCase() + word.slice(1);
               };
               
+              // Clean word by removing ## symbols
+              const cleanWord = (word: string): string => {
+                return word.replace(/##/g, '');
+              };
+              
               // Create tooltip
               const bandLabel = band === 'above' ? 'above threshold' : 
                                band === 'below' ? 'below threshold' : 'within thresholds';
@@ -818,14 +823,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     color: m.isUnknown ? '#00AAFF' : (isPunctuation ? '#000' : '#000'),
                     borderRadius: getBorderRadius(),
                     textAlign: 'center',
-                    padding: isSelected ? '3px 6px' : '4px 8px',
+                    padding: isSelected ? '2px 6px' : '4px 8px',
                     display: 'inline-block',
                     fontWeight: fontStyle.fontWeight,
                     fontStyle: fontStyle.fontStyle,
                     cursor: 'pointer',
                     border: isSelected ? '2px solid #0072B2' : 'none',
-                    boxShadow: isSelected ? '0 0 4px #0072B2' : undefined,
-                    transition: 'border 0.1s, box-shadow 0.1s',
+                    transition: 'border 0.1s',
                     textDecoration: m.isUnknown ? 'underline wavy #00AAFF' : undefined,
                     whiteSpace: 'nowrap',
                   }}
@@ -839,7 +843,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   }}
                   title={tooltipParts}
                 >
-                  {isSentenceStart(i) ? capitalizeWord(m.word) : m.word}
+                  {isSentenceStart(i) ? capitalizeWord(cleanWord(m.word)) : cleanWord(m.word)}
                 </span>
               );
             })}
@@ -936,7 +940,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <tbody>
                     {displayWords.map(({ word, normProvided, normReceived, normSum, index }) => (
                       <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '25%', wordWrap: 'break-word'}}>{word}</td>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '25%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normReceived.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normProvided.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normSum.toFixed(3)}</td>
@@ -1021,14 +1025,14 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 <tr>
                   <th></th>
                   {displayWords.map((w, i) => (
-                    <th key={i} style={{ writingMode: 'vertical-rl', fontSize: '0.9em', padding: '2px 4px' }}>{w}</th>
+                    <th key={i} style={{ writingMode: 'vertical-rl', fontSize: '0.9em', padding: '8px 8px', textAlign: 'right' }}>{w.replace(/##/g, '')}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {displayAttention.map((row, i) => (
                   <tr key={i}>
-                    <th style={{ textAlign: 'right', fontSize: '0.9em', padding: '2px 4px' }}>{displayWords[i]}</th>
+                    <th style={{ textAlign: 'right', fontSize: '0.9em', padding: '2px 8px' }}>{displayWords[i].replace(/##/g, '')}</th>
                     {row.map((val, j) => (
                       <td key={j} style={{ background: getBlueWhiteColor(val, attMin, attMax), width: 60, height: 30, textAlign: 'center', fontSize: '0.8em' }}>
                         {val.toFixed(2)}

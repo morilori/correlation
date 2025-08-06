@@ -26,6 +26,8 @@ class PredictionProbabilitiesResponse(BaseModel):
 class AttentionResponse(BaseModel):
     tokens: List[str]
     attention: List[List[float]]  # attention[i][j]: how much word j attends to word i
+    ffn_activations: List[float] = []  # FFN activation counts for each token
+    probabilities: List[float] = []  # Prediction probabilities for each token (Recalled Meaning)
 
 # Load BERT model and tokenizer
 bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -52,6 +54,43 @@ def attention_endpoint(req: AttentionRequest):
         attn = torch.stack(outputs.attentions)  # (num_layers, batch, num_heads, seq_len, seq_len)
         attn = attn.sum(dim=0).sum(dim=1)[0]  # (seq_len, seq_len)
         attn = attn.cpu().detach().numpy().tolist()
+        
+        # Get FFN activation counts
+        ffn_counts_dict = bert_model.get_ffn_activation_counts()
+        
+        # Aggregate FFN activation counts across all layers
+        seq_len = inputs['input_ids'].shape[1]
+        ffn_activations = [0.0] * seq_len
+        
+        for layer_idx, counts in ffn_counts_dict.items():
+            # counts is (batch_size, seq_len), we want batch 0
+            layer_counts = counts[0].cpu().detach().numpy()
+            for i in range(min(len(ffn_activations), len(layer_counts))):
+                ffn_activations[i] += layer_counts[i]
+    
+    # Get prediction probabilities for each token (Recalled Meaning)
+    tokens_for_probs = bert_tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+    probabilities = []
+    input_ids = inputs['input_ids'][0]
+    
+    for i, token in enumerate(tokens_for_probs):
+        if token in ['[CLS]', '[SEP]']:
+            probabilities.append(1.0)
+            continue
+            
+        # Create masked input
+        masked_input_ids = input_ids.clone()
+        masked_input_ids[i] = bert_tokenizer.mask_token_id
+        masked_inputs = {k: v.clone() for k, v in inputs.items()}
+        masked_inputs['input_ids'][0] = masked_input_ids
+        
+        with torch.no_grad():
+            outputs_masked = bert_model(**masked_inputs)
+            logits = outputs_masked.logits[0, i]
+            probs = torch.softmax(logits, dim=-1)
+            orig_id = input_ids[i].item()
+            prob = probs[orig_id].item()
+            probabilities.append(prob)
     
     # Convert tokens to readable words (skip special tokens for visualization)
     tokens = bert_tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
@@ -61,12 +100,16 @@ def attention_endpoint(req: AttentionRequest):
         tokens = tokens[1:]
         attn = attn[1:]
         attn = [row[1:] for row in attn]
+        ffn_activations = ffn_activations[1:]
+        probabilities = probabilities[1:]
     if tokens and tokens[-1] == '[SEP]':
         tokens = tokens[:-1]
         attn = attn[:-1]
         attn = [row[:-1] for row in attn]
+        ffn_activations = ffn_activations[:-1]
+        probabilities = probabilities[:-1]
     
-    return AttentionResponse(tokens=tokens, attention=attn)
+    return AttentionResponse(tokens=tokens, attention=attn, ffn_activations=ffn_activations, probabilities=probabilities)
 
 
 # Helper: get probability of original token at each position by masking it

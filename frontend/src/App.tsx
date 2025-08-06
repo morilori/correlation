@@ -11,14 +11,14 @@ function isPunctuation(word: string) {
 
 function App() {
   const [input, setInput] = useState('')
-  const [attentionData, setAttentionData] = useState<{words: string[], attention: number[][]} | null>(null);
+  const [attentionData, setAttentionData] = useState<{words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]} | null>(null);
   const [attentionError, setAttentionError] = useState<string | null>(null);
   const [selectedTokenIndices, setSelectedTokenIndices] = useState<number[]>([]); // multi-token selection
   const [unknownTokenIndices, setUnknownTokenIndices] = useState<number[]>([]); // indices of words marked as unknown
   const [knownTokenIndices, setKnownTokenIndices] = useState<number[]>([]); // indices of words marked as known
   const [sentencesPerGroup, setSentencesPerGroup] = useState(1);
   const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
-  const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][]}[]>([]);
+  const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]}[]>([]);
 
   // Probability scoreboard state
   const [probabilityWords, setProbabilityWords] = useState<string[]>([]);
@@ -108,7 +108,7 @@ function App() {
       }
 
       setAttentionError(null);
-      const groupResults: {words: string[], attention: number[][]}[] = [];
+      const groupResults: {words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]}[] = [];
       
       try {
         for (let i = 0; i < groups.length; i++) {
@@ -123,14 +123,21 @@ function App() {
           const data = await res.json();
           groupResults.push({
             words: data.tokens,
-            attention: data.attention
+            attention: data.attention,
+            ffnActivations: data.ffn_activations || [],
+            probabilities: data.probabilities || []
           });
         }
         
         setAllGroupsData(groupResults);
         const currentGroup = groupResults[Math.min(currentGroupIndex, groupResults.length - 1)];
         if (currentGroup) {
-          setAttentionData({ words: currentGroup.words, attention: currentGroup.attention });
+          setAttentionData({ 
+            words: currentGroup.words, 
+            attention: currentGroup.attention,
+            ffnActivations: currentGroup.ffnActivations || [],
+            probabilities: currentGroup.probabilities || []
+          });
         } else {
           setAttentionData(null);
         }
@@ -147,6 +154,8 @@ function App() {
   // Attention data for display (always includes all words including punctuation for display, but punctuation is excluded from calculations)
   let displayWords = attentionData?.words || [];
   let displayAttention = attentionData?.attention || [];
+  let displayFFNActivations = attentionData?.ffnActivations || [];
+  let displayProbabilities = attentionData?.probabilities || [];
   
   // Self-attention (diagonal) is always included in score calculation
   // Immediate neighbors are always included in score calculation
@@ -166,6 +175,7 @@ function App() {
       }
     }
     if (current.length) groups.push(current);
+    
     displayWords = groups.map(g => g.map(i => displayWords[i]).join('').replace(/^##/, ''));
     displayAttention = groups.map(g1 =>
       groups.map(g2 => {
@@ -178,6 +188,24 @@ function App() {
       })
     );
     
+    // Process FFN activations by averaging over word pieces  
+    displayFFNActivations = groups.map(g => {
+      let sum = 0;
+      for (const i of g) {
+        sum += displayFFNActivations[i] || 0;
+      }
+      return g.length > 0 ? sum / g.length : 0;
+    });
+    
+    // Process probabilities by averaging over word pieces (geometric mean would be more appropriate for probabilities, but using arithmetic for consistency)
+    displayProbabilities = groups.map(g => {
+      let sum = 0;
+      for (const i of g) {
+        sum += displayProbabilities[i] || 0;
+      }
+      return g.length > 0 ? sum / g.length : 0;
+    });
+    
     // Always exclude punctuation from calculations - zero out attention to/from punctuation words
     displayAttention = displayAttention.map((row, i) =>
       row.map((val, j) => {
@@ -186,6 +214,11 @@ function App() {
         // Zero out if either word is punctuation
         return (isPuncI || isPuncJ) ? 0 : val;
       })
+    );
+    
+    // Also zero out FFN activations for punctuation
+    displayFFNActivations = displayFFNActivations.map((val, i) => 
+      isPunctuation(displayWords[i]) ? 0 : val
     );
   }
 
@@ -259,7 +292,8 @@ function App() {
                 setUnknownTokenIndices={setUnknownTokenIndices}
                 setKnownTokenIndices={setKnownTokenIndices}
                 punctuationIndices={displayWords.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1)}
-                probabilities={probabilities}
+                probabilities={displayProbabilities}
+                ffnActivations={displayFFNActivations}
               />
             </>
           ) : attentionError ? (

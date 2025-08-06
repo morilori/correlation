@@ -13,6 +13,7 @@ interface AttentionHeatmapProps {
   setKnownTokenIndices?: (indices: number[]) => void; // setter for known words
   punctuationIndices?: number[]; // indices of punctuation words
   probabilities?: number[]; // BERT prediction probabilities for each word
+  ffnActivations?: number[]; // FFN activation counts for each word
 }
 
 const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
@@ -25,7 +26,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   setUnknownTokenIndices,
   setKnownTokenIndices,
   punctuationIndices = [],
-  probabilities = []
+  probabilities = [], // Probabilities for Meaning Recall
+  ffnActivations = []
 }) => {
   const displayWords = words;
   // Adapt attention: unknown words only receive, not provide
@@ -133,15 +135,25 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       : (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
   );
   
+  // Normalize FFN activations (0-1 range) - filter out punctuation for normalization
+  const nonPunctuationFFN = ffnActivations.filter((_, i) => !punctuationIndices.includes(i));
+  const minFFN = nonPunctuationFFN.length > 0 ? Math.min(...nonPunctuationFFN) : 0;
+  const maxFFN = nonPunctuationFFN.length > 0 ? Math.max(...nonPunctuationFFN) : 1;
+  const normalizedFFNActivations = ffnActivations.map((count, i) => 
+    punctuationIndices.includes(i) 
+      ? 0  // Set punctuation FFN activations to 0
+      : (maxFFN - minFFN ? (count - minFFN) / (maxFFN - minFFN) : 0)
+  );
+  
   // Normalize probabilities (0-1 range) - filter out punctuation for normalization
-  const nonPunctuationProbabilities = probabilities.filter((_, i) => !punctuationIndices.includes(i));
-  const minProb = nonPunctuationProbabilities.length > 0 ? Math.min(...nonPunctuationProbabilities) : 0;
-  const maxProb = nonPunctuationProbabilities.length > 0 ? Math.max(...nonPunctuationProbabilities) : 1;
-  const normalizedProbabilities = probabilities.map((prob, i) => 
+  const nonPunctuationProbs = probabilities && probabilities.filter((_, i) => !punctuationIndices.includes(i)) || [];
+  const minProb = nonPunctuationProbs.length > 0 ? Math.min(...nonPunctuationProbs) : 0;
+  const maxProb = nonPunctuationProbs.length > 0 ? Math.max(...nonPunctuationProbs) : 1;
+  const normalizedProbabilities = probabilities ? probabilities.map((prob, i) => 
     punctuationIndices.includes(i) 
       ? 0  // Set punctuation probabilities to 0
       : (maxProb - minProb ? (prob - minProb) / (maxProb - minProb) : 0)
-  );
+  ) : [];
   
   // Compute metrics for each word position ONCE, in original order
   const metrics = wordObjs.map(({ word, index }, i) => ({
@@ -152,7 +164,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     normProvided: normProvided[index],
     normReceived: normReceived[index],
     normSum: normalizedSums[i],
-    normProbability: normalizedProbabilities[index] || 0, // Normalized probability (0-1)
+    normRetrieved: normalizedFFNActivations[index] || 0, // Normalized FFN activations (0-1) - Retrieved Meaning
+    normRecalled: normalizedProbabilities[index] || 0, // Normalized probabilities (0-1) - Meaning Recall
     isUnknown: unknownTokenIndices.includes(index),
     isKnown: knownTokenIndices.includes(index),
   }));
@@ -870,6 +883,23 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       <div style={{ width: '100%' }}>
         <b>Scoreboard: Understanding Mechanisms by Attention Bands | Text Inference Score: {textScore.toFixed(3)}</b>
         
+        {/* Meaning Dimensions Explanation */}
+        <div style={{ 
+          margin: '12px 0', 
+          padding: '12px', 
+          backgroundColor: '#f9f9f9', 
+          borderRadius: '6px', 
+          fontSize: '0.85em', 
+          color: '#666',
+          border: '1px solid #e0e0e0'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '6px', color: '#333' }}>Six Meaning Dimensions:</div>
+          <div><strong>Received/Provided Meaning:</strong> Attention flow - how much attention words receive from or provide to other words</div>
+          <div><strong>Constructed Meaning:</strong> Contextual reasoning - normalized sum of attention interactions</div>
+          <div><strong>Retrieved Meaning:</strong> Knowledge access - FFN neuron activations measuring stored knowledge retrieval</div>
+          <div><strong>Meaning Recall:</strong> Predictability - probability of correctly predicting each word from context</div>
+        </div>
+        
         {/* Helper function to determine band for a word */}
         {(() => {
           // Create the same filtered data that excludes punctuation (always excluded from calculations)
@@ -945,23 +975,25 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`, tableLayout: 'fixed'}}>
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
-                      <th style={{textAlign: 'left', padding: '4px 8px', width: '20%'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Received Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Provided Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Constructed Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Retrieved Meaning</th>
-                      <th style={{textAlign: 'center', padding: '4px 8px', width: '16%'}}>Mark As</th>
+                      <th style={{textAlign: 'left', padding: '4px 8px', width: '16%'}}>Word</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Received Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Provided Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Constructed Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Retrieved Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Meaning Recall</th>
+                      <th style={{textAlign: 'center', padding: '4px 8px', width: '14%'}}>Mark As</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayWords.map(({ word, normProvided, normReceived, normSum, normProbability, index }) => (
+                    {displayWords.map(({ word, normProvided, normReceived, normSum, normRetrieved, normRecalled, index }) => (
                       <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '20%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normReceived.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normSum.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normProbability.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'center', width: '16%'}}>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '16%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normSum.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normRetrieved.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normRecalled.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'center', width: '14%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button
                               onClick={() => {
@@ -1075,8 +1107,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         </div>
         {showCorrelation && (() => {
           // Calculate correlation matrix for meaning processing mechanisms
-          const scoreTypes = ['normReceived', 'normProvided', 'normSum', 'normProbability'];
-          const scoreLabels = ['Received Meaning', 'Provided Meaning', 'Constructed Meaning', 'Retrieved Meaning'];
+          const scoreTypes = ['normReceived', 'normProvided', 'normSum', 'normRetrieved', 'normRecalled'];
+          const scoreLabels = ['Received Meaning', 'Provided Meaning', 'Constructed Meaning', 'Retrieved Meaning', 'Meaning Recall'];
           
           // Get data for non-punctuation words only
           const scoreData = scoreTypes.map(scoreType => 
@@ -1194,9 +1226,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           const analysisData = filteredMetrics.map(metric => ({
             word: metric.word,
             constructedMeaning: metric.normSum, // How much the model constructs meaning through attention
-            retrievedMeaning: metric.normProbability, // How much the model retrieves stored meaning
-            discrepancy: Math.abs(metric.normSum - metric.normProbability), // Absolute difference
-            meaningBias: metric.normSum - metric.normProbability, // Positive = construction-driven, Negative = retrieval-driven
+            retrievedMeaning: metric.normRetrieved, // How much the model retrieves stored meaning (FFN activations)
+            discrepancy: Math.abs(metric.normSum - metric.normRetrieved), // Absolute difference between Constructed and Retrieved
+            meaningBias: metric.normSum - metric.normRetrieved, // Positive = construction-driven, Negative = retrieval-driven
           }));
 
           // Sort by discrepancy for analysis

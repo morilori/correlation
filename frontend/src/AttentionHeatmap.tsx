@@ -946,10 +946,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
                       <th style={{textAlign: 'left', padding: '4px 8px', width: '20%'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Attention Input</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Attention Output</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Inferred</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Memorized</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Received Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Provided Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Constructed Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Retrieved Meaning</th>
                       <th style={{textAlign: 'center', padding: '4px 8px', width: '16%'}}>Mark As</th>
                     </tr>
                   </thead>
@@ -1070,13 +1070,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       <div style={{ width: '100%', marginTop: '20px' }}>
         <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
           <button onClick={() => setShowCorrelation(v => !v)} style={{marginBottom: 8}}>
-            {showCorrelation ? 'Hide' : 'Show'} Context Processing Mechanisms Correlation Matrix
+            {showCorrelation ? 'Hide' : 'Show'} Meaning Processing Mechanisms Correlation Matrix
           </button>
         </div>
         {showCorrelation && (() => {
-          // Calculate correlation matrix for context processing mechanisms
+          // Calculate correlation matrix for meaning processing mechanisms
           const scoreTypes = ['normReceived', 'normProvided', 'normSum', 'normProbability'];
-          const scoreLabels = ['Attention Input', 'Attention Output', 'Inferred Context', 'Memorized Context'];
+          const scoreLabels = ['Received Meaning', 'Provided Meaning', 'Constructed Meaning', 'Retrieved Meaning'];
           
           // Get data for non-punctuation words only
           const scoreData = scoreTypes.map(scoreType => 
@@ -1173,7 +1173,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               </table>
               <div style={{ fontSize: '0.8em', marginTop: '8px', textAlign: 'center', color: '#666' }}>
                 Correlation between BERT's understanding mechanisms: 
-                <strong>Attention Input/Output</strong> (contextual reasoning) vs <strong>Inferred/Memorized Understanding</strong>.
+                <strong>Received/Provided Meaning</strong> (attention flow) vs <strong>Constructed/Retrieved Meaning</strong>.
                 <br />
                 Values range from -1 (negative correlation, red) to +1 (positive correlation, blue).
               </div>
@@ -1182,21 +1182,21 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
         })()}
       </div>
 
-      {/* Inferred vs Memorized Context Analysis */}
+      {/* Constructed vs Retrieved Meaning Analysis */}
       <div style={{ width: '100%', marginTop: '20px' }}>
         <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
           <button onClick={() => setShowContextAnalysis(v => !v)} style={{marginBottom: 8}}>
-            {showContextAnalysis ? 'Hide' : 'Show'} Inferred vs Memorized Context Analysis
+            {showContextAnalysis ? 'Hide' : 'Show'} Constructed vs Retrieved Meaning Analysis
           </button>
         </div>
         {showContextAnalysis && (() => {
-          // Calculate inferred vs memorized context discrepancies
+          // Calculate constructed vs retrieved meaning discrepancies
           const analysisData = filteredMetrics.map(metric => ({
             word: metric.word,
-            inferredContext: metric.normSum, // How much the model infers context through attention
-            memorizedContext: metric.normProbability, // How much the model recalls contextual patterns
+            constructedMeaning: metric.normSum, // How much the model constructs meaning through attention
+            retrievedMeaning: metric.normProbability, // How much the model retrieves stored meaning
             discrepancy: Math.abs(metric.normSum - metric.normProbability), // Absolute difference
-            contextBias: metric.normSum - metric.normProbability, // Positive = inference-driven, Negative = memory-driven
+            meaningBias: metric.normSum - metric.normProbability, // Positive = construction-driven, Negative = retrieval-driven
           }));
 
           // Sort by discrepancy for analysis
@@ -1219,19 +1219,19 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 borderRadius: '8px',
                 color: '#444'
               }}>
-                <strong>Conceptual Framework:</strong> This analysis reveals how BERT processes contextual information through two mechanisms:
+                <strong>Conceptual Framework:</strong> This analysis reveals how BERT processes information through two complementary mechanisms:
                 <br />
-                • <strong style={{color: '#0066cc'}}>Inferred Context</strong> (attention): Dynamic reasoning about word relationships and contextual patterns
+                • <strong style={{color: '#0066cc'}}>Constructed Meaning</strong> (attention): Active construction of understanding through contextual reasoning
                 <br />
-                • <strong style={{color: '#cc6600'}}>Memorized Context</strong> (FFNs): Recall of stored contextual associations from training data
+                • <strong style={{color: '#cc6600'}}>Retrieved Meaning</strong> (FFNs): Accessing stored linguistic knowledge and learned patterns
                 <br /><br />
                 <strong>Interpretation:</strong>
                 <br />
-                • <strong>Above diagonal:</strong> Context inference-driven (model actively reasons about relationships)
+                • <strong>Above diagonal:</strong> Construction-driven (model actively builds meaning from context)
                 <br />
-                • <strong>Below diagonal:</strong> Context memory-driven (model recalls learned contextual patterns)
+                • <strong>Below diagonal:</strong> Retrieval-driven (model accesses stored knowledge patterns)
                 <br />
-                • <strong>Distance from diagonal:</strong> Strength of the contextual processing preference
+                • <strong>Distance from diagonal:</strong> Strength of the meaning-making preference
               </div>
               
               {/* Scatter Plot */}
@@ -1264,10 +1264,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   
                   {/* Data points */}
                   {analysisData.map((point, i) => {
-                    const x = margin + point.inferredContext * plotSize;
-                    const y = scatterSize - margin - point.memorizedContext * plotSize; // Flip Y axis
-                    const isInferenceDriven = point.contextBias > 0;
-                    const color = isInferenceDriven ? '#0066cc' : '#cc6600';
+                    const x = margin + point.constructedMeaning * plotSize;
+                    const y = scatterSize - margin - point.retrievedMeaning * plotSize; // Flip Y axis
+                    const isConstructionDriven = point.meaningBias > 0;
+                    const color = isConstructionDriven ? '#0066cc' : '#cc6600';
                     const radius = 3 + (point.discrepancy / maxDiscrepancy) * 4; // Size by discrepancy
                     
                     return (
@@ -1281,14 +1281,14 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                         stroke={color}
                         strokeWidth="1"
                       >
-                        <title>{`${point.word}: Inferred=${point.inferredContext.toFixed(3)}, Memorized=${point.memorizedContext.toFixed(3)}, Bias=${point.contextBias > 0 ? '+' : ''}${point.contextBias.toFixed(3)}`}</title>
+                        <title>{`${point.word}: Constructed=${point.constructedMeaning.toFixed(3)}, Retrieved=${point.retrievedMeaning.toFixed(3)}, Bias=${point.meaningBias > 0 ? '+' : ''}${point.meaningBias.toFixed(3)}`}</title>
                       </circle>
                     );
                   })}
                   
                   {/* Axis labels */}
                   <text x={scatterSize / 2} y={scatterSize - 5} textAnchor="middle" fontSize="12" fill="#666">
-                    Inferred Context (Attention-based Reasoning)
+                    Constructed Meaning (Attention-based Reasoning)
                   </text>
                   <text 
                     x="15" 
@@ -1298,7 +1298,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     fill="#666" 
                     transform={`rotate(-90, 15, ${scatterSize / 2})`}
                   >
-                    Memorized Context (Learned Patterns)
+                    Retrieved Meaning (Stored Knowledge)
                   </text>
                   
                   {/* Scale labels */}
@@ -1320,7 +1320,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
               
               {/* Top Discrepancies Table */}
               <div>
-                <h4 style={{ margin: '0 0 8px 0', fontSize: '1em' }}>Top Inferred vs Memorized Context Discrepancies</h4>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '1em' }}>Top Constructed vs Retrieved Meaning Discrepancies</h4>
                 <table style={{
                   width: '100%',
                   borderCollapse: 'collapse',
@@ -1331,10 +1331,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <thead>
                     <tr style={{ backgroundColor: '#f0f0f0' }}>
                       <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'left' }}>Word</th>
-                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Inferred</th>
-                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Memorized</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Constructed Meaning</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Retrieved Meaning</th>
                       <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Bias</th>
-                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'center' }}>Context Strategy</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'center' }}>Meaning Strategy</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1344,35 +1344,35 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                           {item.word.replace(/##/g, '')}
                         </td>
                         <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
-                          {item.inferredContext.toFixed(3)}
+                          {item.constructedMeaning.toFixed(3)}
                         </td>
                         <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
-                          {item.memorizedContext.toFixed(3)}
+                          {item.retrievedMeaning.toFixed(3)}
                         </td>
                         <td style={{ 
                           padding: '4px 8px', 
                           border: '1px solid #ddd', 
                           textAlign: 'right',
-                          color: item.contextBias > 0 ? '#0066cc' : '#cc6600',
+                          color: item.meaningBias > 0 ? '#0066cc' : '#cc6600',
                           fontWeight: 'bold'
                         }}>
-                          {item.contextBias > 0 ? '+' : ''}{item.contextBias.toFixed(3)}
+                          {item.meaningBias > 0 ? '+' : ''}{item.meaningBias.toFixed(3)}
                         </td>
                         <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'center', fontSize: '0.8em' }}>
-                          {item.contextBias > 0.1 ? '🧠 Context Reasoning' : 
-                           item.contextBias < -0.1 ? '📚 Context Memory' : 
-                           '⚖️ Balanced Context'}
+                          {item.meaningBias > 0.1 ? '🏗️ Active Construction' : 
+                           item.meaningBias < -0.1 ? '📚 Knowledge Retrieval' : 
+                           '⚖️ Balanced Processing'}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div style={{ fontSize: '0.8em', marginTop: '8px', color: '#666' }}>
-                  <strong>🧠 Context Reasoning:</strong> Model actively infers contextual meaning through attention patterns
+                  <strong>🏗️ Active Construction:</strong> Model actively builds meaning through attention-based reasoning
                   <br />
-                  <strong>📚 Context Memory:</strong> Model recalls stored contextual associations from training
+                  <strong>📚 Knowledge Retrieval:</strong> Model accesses stored linguistic knowledge and learned patterns
                   <br />
-                  <strong>⚖️ Balanced Context:</strong> Model uses both contextual reasoning and memory equally
+                  <strong>⚖️ Balanced Processing:</strong> Model uses both construction and retrieval equally
                 </div>
               </div>
             </div>

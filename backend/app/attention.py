@@ -75,91 +75,79 @@ def get_prediction_probabilities(text: str, known_indices: List[int], unknown_in
     inputs = bert_tokenizer(text, return_tensors='pt', truncation=True, max_length=512)
     input_ids = inputs['input_ids'][0]
     tokens = bert_tokenizer.convert_ids_to_tokens(input_ids)
-    probabilities = []
     seq_len = len(tokens)
 
-    # If no custom_attention_mask provided, build one from known/unknown indices
-    if custom_attention_mask is None:
-        # By default, all ones (all tokens attend to all)
-        mask = [[1.0 for _ in range(seq_len)] for _ in range(seq_len)]
+    # Only create custom mask if we actually have unknown indices or explicit mask
+    cam_tensor = None
+    if unknown_indices or custom_attention_mask is not None:
+        # Create attention mask efficiently
+        if custom_attention_mask is None:
+            # Build mask from known/unknown indices only when needed
+            mask = torch.ones((seq_len, seq_len), dtype=torch.float32)
+            
+            # Map word indices to token indices
+            word_to_token_indices = []
+            current = []
+            for i, tok in enumerate(tokens):
+                if tok.startswith('##'):
+                    current.append(i)
+                else:
+                    if current:
+                        word_to_token_indices.append(current)
+                    current = [i]
+            if current:
+                word_to_token_indices.append(current)
 
-        # Map word indices to BERT token indices
-        # Assume frontend sends word indices (not subword indices)
-        # We'll group BERT tokens into words: a new word starts at a token not starting with '##'
-        word_to_token_indices = []  # List[List[int]]
-        current = []
-        for i, tok in enumerate(tokens):
-            if tok.startswith('##'):
-                current.append(i)
-            else:
-                if current:
-                    word_to_token_indices.append(current)
-                current = [i]
-        if current:
-            word_to_token_indices.append(current)
-
-        print("Word to token mapping:", word_to_token_indices)
-
-        # Flatten all BERT token indices for unknown words
-        unknown_token_indices = set()
-        for word_idx in unknown_indices:
-            if 0 <= word_idx < len(word_to_token_indices):
-                for tidx in word_to_token_indices[word_idx]:
-                    unknown_token_indices.add(tidx)
-
-        print("Unknown token indices:", unknown_token_indices)
-
-        # For each unknown BERT token, set its row to 0 (provides no attention), but keep its column as is (can receive attention)
-        for idx in unknown_token_indices:
-            if 0 <= idx < seq_len:
-                for j in range(seq_len):
-                    mask[idx][j] = 0.0
-        custom_attention_mask = mask
+            # Set unknown token rows to 0 (they provide no attention)
+            for word_idx in unknown_indices:
+                if 0 <= word_idx < len(word_to_token_indices):
+                    for tidx in word_to_token_indices[word_idx]:
+                        if 0 <= tidx < seq_len:
+                            mask[tidx, :] = 0.0
+        else:
+            mask = torch.tensor(custom_attention_mask, dtype=torch.float32)
         
-        # Print a sample of the mask to verify it's being constructed correctly
-        if unknown_token_indices:
-            print("Sample mask rows for unknown tokens:")
-            for idx in list(unknown_token_indices)[:3]:  # Show first 3
-                print(f"  Row {idx}: {mask[idx][:5]}...")  # Show first 5 values
+        # Expand mask for all layers and heads only if we need it
+        num_layers = bert_model.config.num_hidden_layers
+        num_heads = bert_model.config.num_attention_heads
+        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
+            num_layers, 1, num_heads, seq_len, seq_len
+        ).contiguous()
 
-    # Broadcast mask to all heads and all layers: (num_layers, batch, num_heads, seq_len, seq_len)
-    num_layers = getattr(bert_model.config, 'num_hidden_layers', 12)
-    num_heads = getattr(bert_model.config, 'num_attention_heads', 12)
-    cam_tensor = torch.tensor(custom_attention_mask, dtype=torch.float32)
-    cam_tensor = cam_tensor.unsqueeze(0).unsqueeze(0)  # (1,1,seq_len,seq_len)
-    cam_tensor = cam_tensor.expand(num_layers, 1, num_heads, cam_tensor.size(-2), cam_tensor.size(-1)).contiguous()  # (num_layers, 1, num_heads, seq_len, seq_len)
-    
-    print(f"Custom attention mask tensor shape: {cam_tensor.shape}")
-    print(f"Zero entries in mask: {torch.sum(cam_tensor == 0.0).item()}")
-    print(f"Total entries in mask: {cam_tensor.numel()}")
-    if torch.sum(cam_tensor == 0.0) > 0:
-        print("Mask has zero entries - attention masking should be active")
-
-    # For each token (skip special tokens)
+    # Calculate probabilities for each token
+    probabilities = []
     for i, token in enumerate(tokens):
         if token in ['[CLS]', '[SEP]']:
             probabilities.append(1.0)
             continue
+            
+        # Create masked input
         masked_input_ids = input_ids.clone()
         masked_input_ids[i] = bert_tokenizer.mask_token_id
         masked_inputs = {k: v.clone() for k, v in inputs.items()}
         masked_inputs['input_ids'][0] = masked_input_ids
+        
         with torch.no_grad():
-            outputs = bert_model(
-                **masked_inputs,
-                custom_attention_mask=cam_tensor
-            )
+            # Only pass custom mask if we have one
+            if cam_tensor is not None:
+                outputs = bert_model(**masked_inputs, custom_attention_mask=cam_tensor)
+            else:
+                outputs = bert_model(**masked_inputs)
+                
             logits = outputs.logits[0, i]
             probs = torch.softmax(logits, dim=-1)
             orig_id = input_ids[i].item()
             prob = probs[orig_id].item()
             probabilities.append(prob)
+
+    # Remove special tokens from output
     if tokens[0] == '[CLS]':
         tokens = tokens[1:]
         probabilities = probabilities[1:]
     if tokens and tokens[-1] == '[SEP]':
         tokens = tokens[:-1]
         probabilities = probabilities[:-1]
+        
     return tokens, probabilities
 
 

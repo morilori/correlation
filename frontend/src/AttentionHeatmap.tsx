@@ -96,7 +96,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // Total attention provided (sum of row)
   const totalProvided = provided;
 
-  const [scoreSortMetric, setScoreSortMetric] = useState<'received' | 'provided' | 'normSum'>('normSum');
+  const [scoreSortMetric, setScoreSortMetric] = useState<'received' | 'provided' | 'normSum' | 'normRetrieved' | 'normRecalled'>('normSum');
   // Percent-based band controls
   const [upperBandPercent, setUpperBandPercent] = useState(20); // percent of words in upper band
   const [lowerBandPercent, setLowerBandPercent] = useState(20); // percent of words in lower band
@@ -229,6 +229,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     if (scoreSortMetric === 'received') return m.normReceived;
     if (scoreSortMetric === 'provided') return m.normProvided;
     if (scoreSortMetric === 'normSum') return m.normSum;
+    if (scoreSortMetric === 'normRetrieved') return m.normRetrieved;
+    if (scoreSortMetric === 'normRecalled') return m.normRecalled;
     return m[scoreSortMetric];
   });
   const originalTextColorScale = getColorScale(originalTextColorArr);
@@ -305,10 +307,12 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           <b>Original Text{selectedTokenIndices && selectedTokenIndices.length > 0 ? ' (colored by ' + customColorLabel + ')' : ' (colored by ' + scoreSortMetric + ')'}:</b>
           <div style={{fontSize: '0.8em'}}>
             <label style={{marginRight: 8}}>Sort by:</label>
-            <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'received' | 'provided' | 'normSum')} style={{fontSize: 13, padding: '2px 6px'}}>
+            <select value={scoreSortMetric} onChange={e => setScoreSortMetric(e.target.value as 'received' | 'provided' | 'normSum' | 'normRetrieved' | 'normRecalled')} style={{fontSize: 13, padding: '2px 6px'}}>
               <option value="received">Norm. Received</option>
               <option value="provided">Norm. Provided</option>
               <option value="normSum">Norm. Sum</option>
+              <option value="normRetrieved">Retrieved Meaning</option>
+              <option value="normRecalled">Meaning Recall</option>
             </select>
           </div>
         </div>
@@ -839,8 +843,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 selectedTokenIndices.length > 0 && customColorArr && 
                   `Attention ${scoreSortMetric === 'received' ? 'received from' : 'given to'} selected: ${customColorArr[i].toFixed(3)}`,
                 selectedTokenIndices.length === 0 && 
-                  `Norm. ${scoreSortMetric}: ${(m as any)[scoreSortMetric === 'normSum' ? 'normSum' : 
-                                                            scoreSortMetric === 'provided' ? 'normProvided' : 'normReceived'].toFixed(3)}`
+                  `Norm. ${scoreSortMetric}: ${(m as any)[
+                    scoreSortMetric === 'normSum' ? 'normSum' : 
+                    scoreSortMetric === 'provided' ? 'normProvided' : 
+                    scoreSortMetric === 'received' ? 'normReceived' :
+                    scoreSortMetric === 'normRetrieved' ? 'normRetrieved' :
+                    scoreSortMetric === 'normRecalled' ? 'normRecalled' : 'normSum'
+                  ].toFixed(3)}`
               ].filter(Boolean).join(' | ');
               
               return (
@@ -985,34 +994,34 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {displayWords.map(({ word, normProvided, normReceived, normSum, normRetrieved, normRecalled, index }) => (
-                      <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '16%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normReceived.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normSum.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normRetrieved.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{normRecalled.toFixed(3)}</td>
+                    {displayWords.map((metric) => (
+                      <tr key={metric.index}>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '16%', wordWrap: 'break-word'}}>{metric.word.replace(/##/g, '')}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normSum.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normRetrieved.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normRecalled.toFixed(3)}</td>
                         <td style={{padding: '4px 8px', textAlign: 'center', width: '14%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button
                               onClick={() => {
                                 if (!setUnknownTokenIndices || !setKnownTokenIndices) return;
-                                if (unknownTokenIndices.includes(index)) {
-                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== index));
+                                if (unknownTokenIndices.includes(metric.index)) {
+                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== metric.index));
                                 } else {
-                                  setUnknownTokenIndices([...unknownTokenIndices.filter(i => i !== index), index]);
-                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== index));
+                                  setUnknownTokenIndices([...unknownTokenIndices.filter(i => i !== metric.index), metric.index]);
+                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== metric.index));
                                 }
                               }}
                               style={{
                                 padding: '2px 6px',
                                 fontSize: '11px',
-                                backgroundColor: unknownTokenIndices.includes(index) ? '#e6f3ff' : '#f8f8f8',
-                                border: unknownTokenIndices.includes(index) ? '1px solid #ff6666' : '1px solid #ddd',
+                                backgroundColor: unknownTokenIndices.includes(metric.index) ? '#e6f3ff' : '#f8f8f8',
+                                border: unknownTokenIndices.includes(metric.index) ? '1px solid #ff6666' : '1px solid #ddd',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
-                                fontWeight: unknownTokenIndices.includes(index) ? 'bold' : 'normal'
+                                fontWeight: unknownTokenIndices.includes(metric.index) ? 'bold' : 'normal'
                               }}
                               title="Mark as unknown word"
                             >
@@ -1021,21 +1030,21 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                             <button
                               onClick={() => {
                                 if (!setKnownTokenIndices || !setUnknownTokenIndices) return;
-                                if (knownTokenIndices.includes(index)) {
-                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== index));
+                                if (knownTokenIndices.includes(metric.index)) {
+                                  setKnownTokenIndices(knownTokenIndices.filter(i => i !== metric.index));
                                 } else {
-                                  setKnownTokenIndices([...knownTokenIndices.filter(i => i !== index), index]);
-                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== index));
+                                  setKnownTokenIndices([...knownTokenIndices.filter(i => i !== metric.index), metric.index]);
+                                  setUnknownTokenIndices(unknownTokenIndices.filter(i => i !== metric.index));
                                 }
                               }}
                               style={{
                                 padding: '2px 6px',
                                 fontSize: '11px',
-                                backgroundColor: knownTokenIndices.includes(index) ? '#ccffcc' : '#f8f8f8',
-                                border: knownTokenIndices.includes(index) ? '1px solid #66ff66' : '1px solid #ddd',
+                                backgroundColor: knownTokenIndices.includes(metric.index) ? '#ccffcc' : '#f8f8f8',
+                                border: knownTokenIndices.includes(metric.index) ? '1px solid #66ff66' : '1px solid #ddd',
                                 borderRadius: '3px',
                                 cursor: 'pointer',
-                                fontWeight: knownTokenIndices.includes(index) ? 'bold' : 'normal'
+                                fontWeight: knownTokenIndices.includes(metric.index) ? 'bold' : 'normal'
                               }}
                               title="Mark as known word"
                             >

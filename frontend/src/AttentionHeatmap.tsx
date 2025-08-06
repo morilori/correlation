@@ -256,6 +256,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // State to show/hide the Word Attention Heatmap
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
   const [showFormulas, setShowFormulas] = useState(false);
+  const [showCorrelation, setShowCorrelation] = useState(false);
+  const [showContextAnalysis, setShowContextAnalysis] = useState(false);
 
   // White-to-blue color scale for heatmap (matching #00AAFF theme)
   function getBlueWhiteColor(value: number, min: number, max: number) {
@@ -866,7 +868,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       </div>
       {/* Scoreboard Table: Split by bands with unknown/known marking */}
       <div style={{ width: '100%' }}>
-        <b>Scoreboard: Normalized Scores by Attention Bands | Text Score (mean norm sum per word): {textScore.toFixed(3)}</b>
+        <b>Scoreboard: Understanding Mechanisms by Attention Bands | Text Inference Score: {textScore.toFixed(3)}</b>
         
         {/* Helper function to determine band for a word */}
         {(() => {
@@ -944,10 +946,10 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
                       <th style={{textAlign: 'left', padding: '4px 8px', width: '20%'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Received</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Provided</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Sum</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Prob.</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Attention Input</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Attention Output</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Inferred</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Memorized</th>
                       <th style={{textAlign: 'center', padding: '4px 8px', width: '16%'}}>Mark As</th>
                     </tr>
                   </thead>
@@ -1062,6 +1064,320 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Correlation Matrix for Normalized Scores */}
+      <div style={{ width: '100%', marginTop: '20px' }}>
+        <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
+          <button onClick={() => setShowCorrelation(v => !v)} style={{marginBottom: 8}}>
+            {showCorrelation ? 'Hide' : 'Show'} Context Processing Mechanisms Correlation Matrix
+          </button>
+        </div>
+        {showCorrelation && (() => {
+          // Calculate correlation matrix for context processing mechanisms
+          const scoreTypes = ['normReceived', 'normProvided', 'normSum', 'normProbability'];
+          const scoreLabels = ['Attention Input', 'Attention Output', 'Inferred Context', 'Memorized Context'];
+          
+          // Get data for non-punctuation words only
+          const scoreData = scoreTypes.map(scoreType => 
+            filteredMetrics.map(metric => metric[scoreType as keyof typeof metric] as number)
+          );
+          
+          // Calculate Pearson correlation coefficient
+          const calculateCorrelation = (x: number[], y: number[]): number => {
+            if (x.length === 0 || y.length === 0) return 0;
+            
+            const n = x.length;
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = y.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+            const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+            const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+            
+            const numerator = n * sumXY - sumX * sumY;
+            const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+            
+            return denominator === 0 ? 0 : numerator / denominator;
+          };
+          
+          // Build correlation matrix
+          const correlationMatrix = scoreTypes.map((_, i) => 
+            scoreTypes.map((_, j) => calculateCorrelation(scoreData[i], scoreData[j]))
+          );
+          
+          // Color function for correlation values (-1 to 1)
+          const getCorrelationColor = (corr: number): string => {
+            const absCorr = Math.abs(corr);
+            if (corr > 0) {
+              // Positive correlation: white to blue
+              const intensity = Math.round(255 * (1 - absCorr));
+              return `rgb(${intensity}, ${intensity}, 255)`;
+            } else {
+              // Negative correlation: white to red
+              const intensity = Math.round(255 * (1 - absCorr));
+              return `rgb(255, ${intensity}, ${intensity})`;
+            }
+          };
+          
+          return (
+            <div style={{ margin: '0 auto 24px auto', width: '100%' }}>
+              <table style={{
+                margin: '0 auto',
+                borderCollapse: 'collapse',
+                fontSize: '0.9em',
+                border: '2px solid #ddd',
+                borderRadius: '8px'
+              }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '8px 12px', backgroundColor: '#f0f0f0', border: '1px solid #ddd' }}></th>
+                    {scoreLabels.map((label, i) => (
+                      <th key={i} style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: '#f0f0f0', 
+                        border: '1px solid #ddd',
+                        textAlign: 'center',
+                        fontSize: '0.85em'
+                      }}>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {scoreLabels.map((rowLabel, i) => (
+                    <tr key={i}>
+                      <td style={{ 
+                        padding: '8px 12px', 
+                        backgroundColor: '#f0f0f0', 
+                        border: '1px solid #ddd',
+                        fontWeight: 'bold',
+                        fontSize: '0.85em'
+                      }}>
+                        {rowLabel}
+                      </td>
+                      {correlationMatrix[i].map((corr, j) => (
+                        <td key={j} style={{ 
+                          padding: '8px 12px', 
+                          border: '1px solid #ddd',
+                          textAlign: 'center',
+                          backgroundColor: getCorrelationColor(corr),
+                          fontWeight: i === j ? 'bold' : 'normal'
+                        }}>
+                          {corr.toFixed(3)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div style={{ fontSize: '0.8em', marginTop: '8px', textAlign: 'center', color: '#666' }}>
+                Correlation between BERT's understanding mechanisms: 
+                <strong>Attention Input/Output</strong> (contextual reasoning) vs <strong>Inferred/Memorized Understanding</strong>.
+                <br />
+                Values range from -1 (negative correlation, red) to +1 (positive correlation, blue).
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* Inferred vs Memorized Context Analysis */}
+      <div style={{ width: '100%', marginTop: '20px' }}>
+        <div style={{ textAlign: 'center', margin: '24px 0 8px 0' }}>
+          <button onClick={() => setShowContextAnalysis(v => !v)} style={{marginBottom: 8}}>
+            {showContextAnalysis ? 'Hide' : 'Show'} Inferred vs Memorized Context Analysis
+          </button>
+        </div>
+        {showContextAnalysis && (() => {
+          // Calculate inferred vs memorized context discrepancies
+          const analysisData = filteredMetrics.map(metric => ({
+            word: metric.word,
+            inferredContext: metric.normSum, // How much the model infers context through attention
+            memorizedContext: metric.normProbability, // How much the model recalls contextual patterns
+            discrepancy: Math.abs(metric.normSum - metric.normProbability), // Absolute difference
+            contextBias: metric.normSum - metric.normProbability, // Positive = inference-driven, Negative = memory-driven
+          }));
+
+          // Sort by discrepancy for analysis
+          const sortedByDiscrepancy = [...analysisData].sort((a, b) => b.discrepancy - a.discrepancy);
+          
+          // Create scatter plot data points
+          const maxDiscrepancy = Math.max(...analysisData.map(d => d.discrepancy));
+          const scatterSize = 400; // SVG size
+          const margin = 40;
+          const plotSize = scatterSize - 2 * margin;
+          
+          return (
+            <div style={{ margin: '0 auto 24px auto', width: '100%' }}>
+              {/* Explanation */}
+              <div style={{ 
+                fontSize: '0.9em', 
+                marginBottom: '16px', 
+                padding: '12px', 
+                backgroundColor: '#f8f8f8', 
+                borderRadius: '8px',
+                color: '#444'
+              }}>
+                <strong>Conceptual Framework:</strong> This analysis reveals how BERT processes contextual information through two mechanisms:
+                <br />
+                • <strong style={{color: '#0066cc'}}>Inferred Context</strong> (attention): Dynamic reasoning about word relationships and contextual patterns
+                <br />
+                • <strong style={{color: '#cc6600'}}>Memorized Context</strong> (FFNs): Recall of stored contextual associations from training data
+                <br /><br />
+                <strong>Interpretation:</strong>
+                <br />
+                • <strong>Above diagonal:</strong> Context inference-driven (model actively reasons about relationships)
+                <br />
+                • <strong>Below diagonal:</strong> Context memory-driven (model recalls learned contextual patterns)
+                <br />
+                • <strong>Distance from diagonal:</strong> Strength of the contextual processing preference
+              </div>
+              
+              {/* Scatter Plot */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                <svg width={scatterSize} height={scatterSize} style={{ border: '1px solid #ddd', borderRadius: '8px' }}>
+                  {/* Background */}
+                  <rect width={scatterSize} height={scatterSize} fill="#fafafa" />
+                  
+                  {/* Grid lines */}
+                  {[0, 0.25, 0.5, 0.75, 1].map(val => {
+                    const pos = margin + val * plotSize;
+                    return (
+                      <g key={val}>
+                        <line x1={margin} y1={pos} x2={scatterSize - margin} y2={pos} stroke="#e0e0e0" strokeWidth="1" />
+                        <line x1={pos} y1={margin} x2={pos} y2={scatterSize - margin} stroke="#e0e0e0" strokeWidth="1" />
+                      </g>
+                    );
+                  })}
+                  
+                  {/* Diagonal line (y = x, balanced context processing) */}
+                  <line 
+                    x1={margin} 
+                    y1={scatterSize - margin} 
+                    x2={scatterSize - margin} 
+                    y2={margin} 
+                    stroke="#999" 
+                    strokeWidth="2" 
+                    strokeDasharray="5,5"
+                  />
+                  
+                  {/* Data points */}
+                  {analysisData.map((point, i) => {
+                    const x = margin + point.inferredContext * plotSize;
+                    const y = scatterSize - margin - point.memorizedContext * plotSize; // Flip Y axis
+                    const isInferenceDriven = point.contextBias > 0;
+                    const color = isInferenceDriven ? '#0066cc' : '#cc6600';
+                    const radius = 3 + (point.discrepancy / maxDiscrepancy) * 4; // Size by discrepancy
+                    
+                    return (
+                      <circle
+                        key={i}
+                        cx={x}
+                        cy={y}
+                        r={radius}
+                        fill={color}
+                        fillOpacity={0.7}
+                        stroke={color}
+                        strokeWidth="1"
+                      >
+                        <title>{`${point.word}: Inferred=${point.inferredContext.toFixed(3)}, Memorized=${point.memorizedContext.toFixed(3)}, Bias=${point.contextBias > 0 ? '+' : ''}${point.contextBias.toFixed(3)}`}</title>
+                      </circle>
+                    );
+                  })}
+                  
+                  {/* Axis labels */}
+                  <text x={scatterSize / 2} y={scatterSize - 5} textAnchor="middle" fontSize="12" fill="#666">
+                    Inferred Context (Attention-based Reasoning)
+                  </text>
+                  <text 
+                    x="15" 
+                    y={scatterSize / 2} 
+                    textAnchor="middle" 
+                    fontSize="12" 
+                    fill="#666" 
+                    transform={`rotate(-90, 15, ${scatterSize / 2})`}
+                  >
+                    Memorized Context (Learned Patterns)
+                  </text>
+                  
+                  {/* Scale labels */}
+                  {[0, 0.25, 0.5, 0.75, 1].map(val => {
+                    const pos = margin + val * plotSize;
+                    return (
+                      <g key={val}>
+                        <text x={pos} y={scatterSize - 25} textAnchor="middle" fontSize="10" fill="#888">
+                          {val.toFixed(2)}
+                        </text>
+                        <text x="25" y={scatterSize - margin - val * plotSize + 4} textAnchor="middle" fontSize="10" fill="#888">
+                          {val.toFixed(2)}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+              
+              {/* Top Discrepancies Table */}
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '1em' }}>Top Inferred vs Memorized Context Discrepancies</h4>
+                <table style={{
+                  width: '100%',
+                  borderCollapse: 'collapse',
+                  fontSize: '0.85em',
+                  border: '1px solid #ddd',
+                  borderRadius: '6px'
+                }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#f0f0f0' }}>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'left' }}>Word</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Inferred</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Memorized</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'right' }}>Bias</th>
+                      <th style={{ padding: '6px 8px', border: '1px solid #ddd', textAlign: 'center' }}>Context Strategy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedByDiscrepancy.slice(0, 8).map((item, i) => (
+                      <tr key={i}>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ddd', fontWeight: 'bold' }}>
+                          {item.word.replace(/##/g, '')}
+                        </td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
+                          {item.inferredContext.toFixed(3)}
+                        </td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'right' }}>
+                          {item.memorizedContext.toFixed(3)}
+                        </td>
+                        <td style={{ 
+                          padding: '4px 8px', 
+                          border: '1px solid #ddd', 
+                          textAlign: 'right',
+                          color: item.contextBias > 0 ? '#0066cc' : '#cc6600',
+                          fontWeight: 'bold'
+                        }}>
+                          {item.contextBias > 0 ? '+' : ''}{item.contextBias.toFixed(3)}
+                        </td>
+                        <td style={{ padding: '4px 8px', border: '1px solid #ddd', textAlign: 'center', fontSize: '0.8em' }}>
+                          {item.contextBias > 0.1 ? '🧠 Context Reasoning' : 
+                           item.contextBias < -0.1 ? '📚 Context Memory' : 
+                           '⚖️ Balanced Context'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div style={{ fontSize: '0.8em', marginTop: '8px', color: '#666' }}>
+                  <strong>🧠 Context Reasoning:</strong> Model actively infers contextual meaning through attention patterns
+                  <br />
+                  <strong>📚 Context Memory:</strong> Model recalls stored contextual associations from training
+                  <br />
+                  <strong>⚖️ Balanced Context:</strong> Model uses both contextual reasoning and memory equally
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Attention Score Formulas Toggle moved to bottom */}

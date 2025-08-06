@@ -25,7 +25,7 @@ cd ..
 # --- Kill any process using port 8000 (backend default) ---
 if lsof -i :8000 >/dev/null 2>&1; then
   echo "Port 8000 in use. Killing process..."
-  fuser -k 8000/tcp
+  lsof -ti :8000 | xargs kill -9 2>/dev/null || true
 fi
 
 # --- Start backend ---

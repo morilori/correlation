@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.attention import router as attention_router
+from .attention import router as attention_router
 
 app = FastAPI()
 

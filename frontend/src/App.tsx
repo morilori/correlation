@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import './App.css'
+import './App.css';
 import AttentionHeatmap from './AttentionHeatmap';
+import ProbabilityScoreboard from './ProbabilityScoreboard';
 
 // Helper to check if a word is punctuation
 function isPunctuation(word: string) {
@@ -18,6 +19,59 @@ function App() {
   const [sentencesPerGroup, setSentencesPerGroup] = useState(1);
   const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
   const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][]}[]>([]);
+
+  // Probability scoreboard state
+  const [probabilityWords, setProbabilityWords] = useState<string[]>([]);
+  const [probabilities, setProbabilities] = useState<number[]>([]);
+  const [originalProbabilities, setOriginalProbabilities] = useState<number[]>([]);
+  const [showScoreboard, setShowScoreboard] = useState(false);
+  // Fetch prediction probabilities when scoreboard is shown or known/unknown indices change
+  useEffect(() => {
+    if (!showScoreboard || !input.trim()) return;
+    const fetchProbabilities = async () => {
+      try {
+        // Fetch changed probabilities (with known/unknown)
+        const res = await fetch('http://localhost:8000/prediction-probabilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: input,
+            known_indices: knownTokenIndices,
+            unknown_indices: unknownTokenIndices,
+          }),
+        });
+        if (!res.ok) throw new Error('Failed to fetch probabilities');
+        const data = await res.json();
+        setProbabilityWords(data.tokens);
+        setProbabilities(data.probabilities);
+        // Debug: print tokens, unknown indices, and probabilities
+        console.log('BERT tokens:', data.tokens);
+        console.log('Unknown indices sent:', knownTokenIndices, unknownTokenIndices);
+        console.log('Probabilities:', data.probabilities);
+
+        // Fetch original probabilities (no unknowns)
+        const resOrig = await fetch('http://localhost:8000/prediction-probabilities', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: input,
+            known_indices: [],
+            unknown_indices: [],
+          }),
+        });
+        if (!resOrig.ok) throw new Error('Failed to fetch original probabilities');
+        const dataOrig = await resOrig.json();
+        setOriginalProbabilities(dataOrig.probabilities);
+        // Debug: print original probabilities
+        console.log('Original Probabilities:', dataOrig.probabilities);
+      } catch (e) {
+        setProbabilityWords([]);
+        setProbabilities([]);
+        setOriginalProbabilities([]);
+      }
+    };
+    fetchProbabilities();
+  }, [showScoreboard, input, knownTokenIndices, unknownTokenIndices]);
 
 
 
@@ -166,6 +220,12 @@ function App() {
           </div>
         )}
       </form>
+      <button style={{ margin: '1em' }} onClick={() => setShowScoreboard(s => !s)}>
+        {showScoreboard ? 'Hide' : 'Show'} Probability Scoreboard
+      </button>
+      {showScoreboard && (
+        <ProbabilityScoreboard words={probabilityWords} probabilities={probabilities} originalProbabilities={originalProbabilities} />
+      )}
       {input.trim() && (
         <div style={{margin: '16px 0'}}>
           {getSentenceGroups(input, sentencesPerGroup).length > 1 && input.trim() && allGroupsData.length > 1 && (
@@ -192,7 +252,6 @@ function App() {
               <AttentionHeatmap 
                 words={displayWords} 
                 attention={displayAttention} 
-                // setRewrittenText prop removed
                 selectedTokenIndices={selectedTokenIndices}
                 setSelectedTokenIndices={setSelectedTokenIndices}
                 unknownTokenIndices={unknownTokenIndices}
@@ -200,6 +259,7 @@ function App() {
                 setUnknownTokenIndices={setUnknownTokenIndices}
                 setKnownTokenIndices={setKnownTokenIndices}
                 punctuationIndices={displayWords.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1)}
+                probabilities={probabilities}
               />
             </>
           ) : attentionError ? (

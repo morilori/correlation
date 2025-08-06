@@ -12,6 +12,7 @@ interface AttentionHeatmapProps {
   setUnknownTokenIndices?: (indices: number[]) => void; // setter for unknown words
   setKnownTokenIndices?: (indices: number[]) => void; // setter for known words
   punctuationIndices?: number[]; // indices of punctuation words
+  probabilities?: number[]; // BERT prediction probabilities for each word
 }
 
 const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
@@ -23,7 +24,8 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   knownTokenIndices = [],
   setUnknownTokenIndices,
   setKnownTokenIndices,
-  punctuationIndices = []
+  punctuationIndices = [],
+  probabilities = []
 }) => {
   const displayWords = words;
   // Adapt attention: unknown words only receive, not provide
@@ -131,6 +133,16 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       : (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
   );
   
+  // Normalize probabilities (0-1 range) - filter out punctuation for normalization
+  const nonPunctuationProbabilities = probabilities.filter((_, i) => !punctuationIndices.includes(i));
+  const minProb = nonPunctuationProbabilities.length > 0 ? Math.min(...nonPunctuationProbabilities) : 0;
+  const maxProb = nonPunctuationProbabilities.length > 0 ? Math.max(...nonPunctuationProbabilities) : 1;
+  const normalizedProbabilities = probabilities.map((prob, i) => 
+    punctuationIndices.includes(i) 
+      ? 0  // Set punctuation probabilities to 0
+      : (maxProb - minProb ? (prob - minProb) / (maxProb - minProb) : 0)
+  );
+  
   // Compute metrics for each word position ONCE, in original order
   const metrics = wordObjs.map(({ word, index }, i) => ({
     word,
@@ -140,6 +152,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     normProvided: normProvided[index],
     normReceived: normReceived[index],
     normSum: normalizedSums[i],
+    normProbability: normalizedProbabilities[index] || 0, // Normalized probability (0-1)
     isUnknown: unknownTokenIndices.includes(index),
     isKnown: knownTokenIndices.includes(index),
   }));
@@ -930,21 +943,23 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`, tableLayout: 'fixed'}}>
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
-                      <th style={{textAlign: 'left', padding: '4px 8px', width: '25%'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Received</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Provided</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '20%'}}>Norm. Sum</th>
-                      <th style={{textAlign: 'center', padding: '4px 8px', width: '15%'}}>Mark As</th>
+                      <th style={{textAlign: 'left', padding: '4px 8px', width: '20%'}}>Word</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Received</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Provided</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Sum</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '16%'}}>Norm. Prob.</th>
+                      <th style={{textAlign: 'center', padding: '4px 8px', width: '16%'}}>Mark As</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {displayWords.map(({ word, normProvided, normReceived, normSum, index }) => (
+                    {displayWords.map(({ word, normProvided, normReceived, normSum, normProbability, index }) => (
                       <tr key={index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '25%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normReceived.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '20%'}}>{normSum.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'center', width: '15%'}}>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '20%', wordWrap: 'break-word'}}>{word.replace(/##/g, '')}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normSum.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '16%'}}>{normProbability.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'center', width: '16%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button
                               onClick={() => {

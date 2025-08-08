@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
+from typing import List, Dict
 import torch
 import numpy as np
 from transformers import BertTokenizer
@@ -17,7 +17,7 @@ class PredictionProbabilitiesRequest(BaseModel):
     text: str
     known_indices: List[int] = []  # indices of words marked as known
     unknown_indices: List[int] = []  # indices of words marked as unknown
-    custom_attention_mask: List[List[float]] = None  # Optional: asymmetric mask (seq_len x seq_len)
+    custom_attention_mask: List[List[float]] = None  # Optional: complete attention matrix (seq_len x seq_len)
 
 class PredictionProbabilitiesResponse(BaseModel):
     tokens: List[str]
@@ -120,38 +120,86 @@ def get_prediction_probabilities(text: str, known_indices: List[int], unknown_in
     tokens = bert_tokenizer.convert_ids_to_tokens(input_ids)
     seq_len = len(tokens)
 
-    # Only create custom mask if we actually have unknown indices or explicit mask
+    # Create custom attention mask if provided or if we have unknown indices
     cam_tensor = None
-    if unknown_indices or custom_attention_mask is not None:
-        # Create attention mask efficiently
-        if custom_attention_mask is None:
-            # Build mask from known/unknown indices only when needed
-            mask = torch.ones((seq_len, seq_len), dtype=torch.float32)
-            
-            # Map word indices to token indices
-            word_to_token_indices = []
-            current = []
-            for i, tok in enumerate(tokens):
-                if tok.startswith('##'):
-                    current.append(i)
-                else:
-                    if current:
-                        word_to_token_indices.append(current)
-                    current = [i]
-            if current:
-                word_to_token_indices.append(current)
-
-            # Set unknown token rows to 0 (they provide no attention)
-            for word_idx in unknown_indices:
-                if 0 <= word_idx < len(word_to_token_indices):
-                    for tidx in word_to_token_indices[word_idx]:
-                        if 0 <= tidx < seq_len:
-                            mask[tidx, :] = 0.0
-        else:
-            mask = torch.tensor(custom_attention_mask, dtype=torch.float32)
+    if custom_attention_mask is not None:
+        # Map word-level attention matrix to token-level attention matrix
+        word_attention_matrix = torch.tensor(custom_attention_mask, dtype=torch.float32)
+        word_count = word_attention_matrix.shape[0]
         
-        # Expand mask for all layers and heads only if we need it
+        # Create word-to-token mapping (excluding [CLS] and [SEP])
+        content_tokens = tokens[1:-1] if tokens[0] == '[CLS]' and tokens[-1] == '[SEP]' else tokens
+        word_to_token_indices = []
+        current_word_tokens = []
+        
+        for i, tok in enumerate(content_tokens):
+            if tok.startswith('##'):
+                current_word_tokens.append(i + 1)  # +1 to account for [CLS]
+            else:
+                if current_word_tokens:
+                    word_to_token_indices.append(current_word_tokens)
+                current_word_tokens = [i + 1]  # +1 to account for [CLS]
+        if current_word_tokens:
+            word_to_token_indices.append(current_word_tokens)
+        
+        # Create token-level attention matrix
+        mask = torch.ones((seq_len, seq_len), dtype=torch.float32)
+        
+        # Map word-level attention to token-level attention
+        for word_i in range(min(word_count, len(word_to_token_indices))):
+            for word_j in range(min(word_count, len(word_to_token_indices))):
+                attention_value = word_attention_matrix[word_i, word_j]
+                # Apply the same attention value to all token pairs between these words
+                for token_i in word_to_token_indices[word_i]:
+                    for token_j in word_to_token_indices[word_j]:
+                        if token_i < seq_len and token_j < seq_len:
+                            mask[token_i, token_j] = attention_value
+        
+        # Special tokens ([CLS], [SEP]) keep their default attention patterns
+        # [CLS] can attend to everything, everything can attend to [CLS]
+        if tokens[0] == '[CLS]':
+            mask[0, :] = 1.0  # [CLS] attends to everything
+            mask[:, 0] = 1.0  # Everything attends to [CLS]
+        if tokens[-1] == '[SEP]':
+            mask[-1, :] = 1.0  # [SEP] attends to everything
+            mask[:, -1] = 1.0  # Everything attends to [SEP]
+        
+        # Expand mask for all layers and heads
         num_layers = bert_model.config.num_hidden_layers
+        num_heads = bert_model.config.num_attention_heads
+        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
+            num_layers, 1, num_heads, seq_len, seq_len
+        ).contiguous()
+    elif unknown_indices:
+        # Build basic mask for unknown indices only
+        mask = torch.ones((seq_len, seq_len), dtype=torch.float32)
+        
+        # Map word indices to token indices
+        word_to_token_indices = []
+        current = []
+        for i, tok in enumerate(tokens):
+            if tok.startswith('##'):
+                current.append(i)
+            else:
+                if current:
+                    word_to_token_indices.append(current)
+                current = [i]
+        if current:
+            word_to_token_indices.append(current)
+
+        # Set unknown token rows to 0 (they provide no attention)
+        for word_idx in unknown_indices:
+            if 0 <= word_idx < len(word_to_token_indices):
+                for tidx in word_to_token_indices[word_idx]:
+                    if 0 <= tidx < seq_len:
+                        mask[tidx, :] = 0.0
+        
+        # Expand mask for all layers and heads
+        num_layers = bert_model.config.num_hidden_layers
+        num_heads = bert_model.config.num_attention_heads
+        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
+            num_layers, 1, num_heads, seq_len, seq_len
+        ).contiguous()
         num_heads = bert_model.config.num_attention_heads
         cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
             num_layers, 1, num_heads, seq_len, seq_len

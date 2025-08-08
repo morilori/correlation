@@ -13,6 +13,7 @@ interface AttentionHeatmapProps {
   setKnownTokenIndices?: (indices: number[]) => void; // setter for known words
   punctuationIndices?: number[]; // indices of punctuation words
   probabilities?: number[]; // BERT prediction probabilities for each word
+  originalProbabilities?: number[]; // Original BERT prediction probabilities (before known/unknown changes)
   ffnActivations?: number[]; // FFN activation counts for each word
 }
 
@@ -27,6 +28,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   setKnownTokenIndices,
   punctuationIndices = [],
   probabilities = [], // Probabilities for Meaning Recall
+  originalProbabilities = [], // Original probabilities for delta calculation
   ffnActivations = []
 }) => {
   const displayWords = words;
@@ -129,11 +131,34 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // Normalize the raw sums to 0-1 range using only non-punctuation values
   const minRawSum = nonPunctuationRawSums.length > 0 ? Math.min(...nonPunctuationRawSums) : 0;
   const maxRawSum = nonPunctuationRawSums.length > 0 ? Math.max(...nonPunctuationRawSums) : 1;
-  const normalizedSums = rawSums.map((sum, i) => 
+  let normalizedSums = rawSums.map((sum, i) => 
     punctuationIndices.includes(i) 
       ? 0  // Set punctuation normSum to 0
       : (maxRawSum - minRawSum ? (sum - minRawSum) / (maxRawSum - minRawSum) : 0)
   );
+  
+  // Recalculate normalizedSums after known word processing to reflect the boosted scores
+  if (knownTokenIndices && knownTokenIndices.length > 0) {
+    // Create new raw sums using the updated normReceived and normProvided values
+    const updatedRawSums = wordObjs.map(({ index }) => 
+      unknownTokenIndices.includes(index) 
+        ? normReceived[index] * (originalMaxReceived - originalMinReceived) + originalMinReceived  // Convert back to original scale
+        : (normReceived[index] * (originalMaxReceived - originalMinReceived) + originalMinReceived) + 
+          (normProvided[index] * (maxProvided - minProvided) + minProvided)  // Convert both back and sum
+    );
+    
+    // Filter out punctuation from updated raw sums for normalization calculation
+    const nonPunctuationUpdatedRawSums = updatedRawSums.filter((_, i) => !punctuationIndices.includes(i));
+    
+    // Normalize the updated raw sums to 0-1 range using only non-punctuation values
+    const minUpdatedRawSum = nonPunctuationUpdatedRawSums.length > 0 ? Math.min(...nonPunctuationUpdatedRawSums) : 0;
+    const maxUpdatedRawSum = nonPunctuationUpdatedRawSums.length > 0 ? Math.max(...nonPunctuationUpdatedRawSums) : 1;
+    normalizedSums = updatedRawSums.map((sum, i) => 
+      punctuationIndices.includes(i) 
+        ? 0  // Set punctuation normSum to 0
+        : (maxUpdatedRawSum - minUpdatedRawSum ? (sum - minUpdatedRawSum) / (maxUpdatedRawSum - minUpdatedRawSum) : 0)
+    );
+  }
   
   // Normalize FFN activations (0-1 range) - filter out punctuation for normalization
   const nonPunctuationFFN = ffnActivations.filter((_, i) => !punctuationIndices.includes(i));
@@ -166,6 +191,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     normSum: normalizedSums[i],
     normRetrieved: normalizedFFNActivations[index] || 0, // Normalized FFN activations (0-1) - Retrieved Meaning
     normRecalled: normalizedProbabilities[index] || 0, // Normalized probabilities (0-1) - Meaning Recall
+    recallDelta: probabilities && originalProbabilities && probabilities.length === originalProbabilities.length 
+      ? ((probabilities[index] || 0) - (originalProbabilities[index] || 0)) * 100 // Delta as percentage
+      : 0, // Probability change delta in percentage points
     isUnknown: unknownTokenIndices.includes(index),
     isKnown: knownTokenIndices.includes(index),
   }));
@@ -984,24 +1012,28 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                 <table style={{borderCollapse: 'collapse', fontSize: '0.95em', width: '100%', border: `2px solid ${bandColor}`, tableLayout: 'fixed'}}>
                   <thead>
                     <tr style={{ backgroundColor: bandColor }}>
-                      <th style={{textAlign: 'left', padding: '4px 8px', width: '16%'}}>Word</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Received Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Provided Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Constructed Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Retrieved Meaning</th>
-                      <th style={{textAlign: 'right', padding: '4px 8px', width: '14%'}}>Meaning Recall</th>
+                      <th style={{textAlign: 'left', padding: '4px 8px', width: '14%'}}>Word</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Received Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Provided Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Constructed Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Retrieved Meaning</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Meaning Recall</th>
+                      <th style={{textAlign: 'right', padding: '4px 8px', width: '12%'}}>Recall Δ (%)</th>
                       <th style={{textAlign: 'center', padding: '4px 8px', width: '14%'}}>Mark As</th>
                     </tr>
                   </thead>
                   <tbody>
                     {displayWords.map((metric) => (
                       <tr key={metric.index}>
-                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '16%', wordWrap: 'break-word'}}>{metric.word.replace(/##/g, '')}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normReceived.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normProvided.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normSum.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normRetrieved.toFixed(3)}</td>
-                        <td style={{padding: '4px 8px', textAlign: 'right', width: '14%'}}>{metric.normRecalled.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', fontWeight: 500, textAlign: 'left', width: '14%', wordWrap: 'break-word'}}>{metric.word.replace(/##/g, '')}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%'}}>{metric.normReceived.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%'}}>{metric.normProvided.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%'}}>{metric.normSum.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%'}}>{metric.normRetrieved.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%'}}>{metric.normRecalled.toFixed(3)}</td>
+                        <td style={{padding: '4px 8px', textAlign: 'right', width: '12%', color: metric.recallDelta > 0 ? '#00AA00' : metric.recallDelta < 0 ? '#AA0000' : '#000'}}>
+                          {metric.recallDelta > 0 ? '+' : ''}{metric.recallDelta.toFixed(2)}%
+                        </td>
                         <td style={{padding: '4px 8px', textAlign: 'center', width: '14%'}}>
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button

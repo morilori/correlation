@@ -164,12 +164,17 @@ def get_prediction_probabilities(text: str, known_indices: List[int], unknown_in
             mask[-1, :] = 1.0  # [SEP] attends to everything
             mask[:, -1] = 1.0  # Everything attends to [SEP]
         
-        # Expand mask for all layers and heads
+        # Apply custom attention mask only to the last layer (layer 11)
         num_layers = bert_model.config.num_hidden_layers
         num_heads = bert_model.config.num_attention_heads
-        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
-            num_layers, 1, num_heads, seq_len, seq_len
-        ).contiguous()
+        
+        # Create tensor with default attention for all layers except the last one
+        cam_tensor = torch.ones((num_layers, 1, num_heads, seq_len, seq_len), dtype=torch.float32)
+        
+        # Apply custom mask only to the last layer (index num_layers-1)
+        cam_tensor[-1, 0, :, :, :] = mask.unsqueeze(0).expand(num_heads, seq_len, seq_len)
+        
+        print(f"Created custom attention mask: shape={cam_tensor.shape}, last_layer_sample={cam_tensor[-1, 0, 0, :3, :3]}")
     elif unknown_indices:
         # Build basic mask for unknown indices only
         mask = torch.ones((seq_len, seq_len), dtype=torch.float32)
@@ -194,16 +199,17 @@ def get_prediction_probabilities(text: str, known_indices: List[int], unknown_in
                     if 0 <= tidx < seq_len:
                         mask[tidx, :] = 0.0
         
-        # Expand mask for all layers and heads
+        # Apply unknown word mask only to the last layer (layer 11)
         num_layers = bert_model.config.num_hidden_layers
         num_heads = bert_model.config.num_attention_heads
-        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
-            num_layers, 1, num_heads, seq_len, seq_len
-        ).contiguous()
-        num_heads = bert_model.config.num_attention_heads
-        cam_tensor = mask.unsqueeze(0).unsqueeze(0).expand(
-            num_layers, 1, num_heads, seq_len, seq_len
-        ).contiguous()
+        
+        # Create tensor with default attention for all layers except the last one
+        cam_tensor = torch.ones((num_layers, 1, num_heads, seq_len, seq_len), dtype=torch.float32)
+        
+        # Apply custom mask only to the last layer (index num_layers-1)
+        cam_tensor[-1, 0, :, :, :] = mask.unsqueeze(0).expand(num_heads, seq_len, seq_len)
+        
+        print(f"Created unknown word mask: shape={cam_tensor.shape}, last_layer_sample={cam_tensor[-1, 0, 0, :3, :3]}")
 
     # Calculate probabilities for each token
     probabilities = []
@@ -244,6 +250,11 @@ def get_prediction_probabilities(text: str, known_indices: List[int], unknown_in
 
 @router.post('/prediction-probabilities', response_model=PredictionProbabilitiesResponse)
 def prediction_probabilities_endpoint(req: PredictionProbabilitiesRequest):
+    print(f"Received prediction request with known_indices: {req.known_indices}, unknown_indices: {req.unknown_indices}")
+    print(f"Custom attention mask provided: {req.custom_attention_mask is not None}")
+    if req.custom_attention_mask is not None:
+        print(f"Custom attention mask shape: {len(req.custom_attention_mask)}x{len(req.custom_attention_mask[0]) if req.custom_attention_mask else 0}")
+    
     tokens, probabilities = get_prediction_probabilities(
         req.text, req.known_indices, req.unknown_indices, req.custom_attention_mask
     )

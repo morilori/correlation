@@ -68,14 +68,15 @@ function App() {
           knownTokenIndices.forEach(iKnown => {
             const prevNormReceived = normReceived[iKnown];
             const boost = 1 - prevNormReceived;
+            console.log(`Known word ${iKnown}: prevNormReceived=${prevNormReceived.toFixed(3)}, boost=${boost.toFixed(3)}`);
             
             if (boost > 0) {
-              // Find total attention given to this known word
-              const totalAttentionToKnown = attentionData.attention.reduce((sum, row) => sum + row[iKnown], 0);
+              // Find total attention given to this known word from the modified matrix
+              const totalAttentionToKnown = modifiedAttention.reduce((sum, row) => sum + row[iKnown], 0);
               
               if (totalAttentionToKnown > 0) {
                 // Boost attention from providers proportionally
-                attentionData.attention.forEach((row, j) => {
+                modifiedAttention.forEach((row, j) => {
                   if (j !== iKnown && row[iKnown] > 0) {
                     const prop = row[iKnown] / totalAttentionToKnown;
                     const attentionBoost = prop * boost * (originalMaxReceived - originalMinReceived);
@@ -98,6 +99,11 @@ function App() {
         // Only include custom_attention_mask if there are modifications
         if (hasModifications) {
           requestBody.custom_attention_mask = modifiedAttention;
+          console.log('Sending custom attention mask for known/unknown words:', {
+            knownTokenIndices,
+            unknownTokenIndices,
+            modifiedAttentionSample: modifiedAttention.slice(0, 3).map(row => row.slice(0, 3))
+          });
         }
 
         // Fetch current probabilities using the modified attention matrix (only if modifications exist)
@@ -109,6 +115,7 @@ function App() {
         if (!res.ok) throw new Error('Failed to fetch dynamic probabilities');
         const data = await res.json();
         setDynamicProbabilities(data.probabilities);
+        console.log('Received dynamic probabilities:', data.probabilities.slice(0, 5));
 
         // Fetch original probabilities (no known/unknown changes)
         const resOrig = await fetch('http://localhost:8000/prediction-probabilities', {
@@ -123,6 +130,7 @@ function App() {
         if (!resOrig.ok) throw new Error('Failed to fetch original probabilities');
         const dataOrig = await resOrig.json();
         setOriginalProbabilities(dataOrig.probabilities);
+        console.log('Received original probabilities:', dataOrig.probabilities.slice(0, 5));
       } catch (e) {
         console.error('Error fetching dynamic probabilities:', e);
         setDynamicProbabilities([]);

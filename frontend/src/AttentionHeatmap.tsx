@@ -114,6 +114,32 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     upper: false
   });
 
+  // Function to boost word probability by increasing attention TO it
+  const boostWordProbability = (wordIndex: number, boostFactor: number = 1.5) => {
+    const modifiedAttention = attention.map(row => [...row]);
+    
+    // Increase attention TO the target word from all other words
+    for (let i = 0; i < modifiedAttention.length; i++) {
+      if (i !== wordIndex && !punctuationIndices.includes(i)) {
+        modifiedAttention[i][wordIndex] *= boostFactor;
+      }
+    }
+    
+    // Normalize rows to maintain attention sum constraints
+    modifiedAttention.forEach((row, i) => {
+      if (!unknownTokenIndices.includes(i)) {
+        const sum = row.reduce((a, b) => a + b, 0);
+        if (sum > 0) {
+          for (let j = 0; j < row.length; j++) {
+            row[j] /= sum;
+          }
+        }
+      }
+    });
+    
+    return modifiedAttention;
+  };
+
   // Use unique ids for each word position
   const wordObjs = displayWords.map((word, idx) => ({ word, index: idx }));
   

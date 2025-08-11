@@ -1,11 +1,27 @@
+/* Global OKLCH color system */
 :root {
+  /* Typography */
   font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
   color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+
+  /* Dark (default) theme palette expressed in OKLCH */
+  --color-bg: oklch(22% 0.02 258);
+  --color-bg-alt: oklch(28% 0.03 258);
+  --color-surface: oklch(32% 0.035 258);
+  --color-text: oklch(92% 0.01 258);
+  --color-text-dim: oklch(75% 0.015 258);
+  --color-border: oklch(40% 0.02 258);
+  --color-accent: oklch(63% 0.25 272);
+  --color-accent-hover: oklch(58% 0.24 272);
+  --color-accent-faint: oklch(63% 0.25 272 / 0.15);
+  --color-danger: oklch(55% 0.24 29);
+  --focus-ring: 0 0 0 4px oklch(63% 0.25 272 / 0.35);
+
+  color: var(--color-text);
+  background-color: var(--color-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -15,11 +31,12 @@
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--color-accent);
   text-decoration: inherit;
+  transition: color .15s ease;
 }
 a:hover {
-  color: #535bf2;
+  color: var(--color-accent-hover);
 }
 
 body {
@@ -28,41 +45,57 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
 }
 
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+  color: var(--color-text);
 }
 
 button {
   border-radius: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--color-border);
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--color-bg-alt);
+  color: var(--color-text);
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: background-color .2s, border-color .2s, color .2s;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: var(--color-accent);
+  background-color: var(--color-surface);
 }
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: var(--focus-ring);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    /* Light theme overrides */
+    --color-bg: oklch(99% 0.01 258);
+    --color-bg-alt: oklch(96% 0.02 258);
+    --color-surface: oklch(93% 0.02 258);
+    --color-text: oklch(23% 0.03 258);
+    --color-text-dim: oklch(42% 0.025 258);
+    --color-border: oklch(80% 0.02 258);
+    --color-accent: oklch(60% 0.25 272);
+    --color-accent-hover: oklch(55% 0.24 272);
+    --color-accent-faint: oklch(60% 0.25 272 / 0.15);
+    --focus-ring: 0 0 0 4px oklch(60% 0.25 272 / 0.35);
+    background-color: var(--color-bg);
+    color: var(--color-text);
   }
   a:hover {
-    color: #747bff;
+    color: var(--color-accent-hover);
   }
   button {
-    background-color: #f9f9f9;
+    background-color: var(--color-bg-alt);
   }
 }

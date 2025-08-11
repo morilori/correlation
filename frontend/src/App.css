@@ -3,6 +3,7 @@
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
+  color: var(--color-text);
 }
 
 .logo {
@@ -12,10 +13,12 @@
   transition: filter 300ms;
 }
 .logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
+  /* Use accent color with transparency via OKLCH */
+  filter: drop-shadow(0 0 2em oklch(63% 0.25 272 / 0.67));
 }
 .logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+  /* React logo cyan-ish accent approximation in OKLCH */
+  filter: drop-shadow(0 0 2em oklch(84% 0.15 210 / 0.7));
 }
 
 @keyframes logo-spin {
@@ -35,8 +38,13 @@
 
 .card {
   padding: 2em;
+  background: var(--color-bg-alt);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 4px oklch(0% 0 0 / 0.2), 0 8px 24px -8px var(--color-accent-faint);
+  backdrop-filter: blur(4px);
 }
 
 .read-the-docs {
-  color: #888;
+  color: var(--color-text-dim);
 }

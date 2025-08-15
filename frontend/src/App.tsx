@@ -1,6 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import AttentionHeatmap from './AttentionHeatmap';
+import { computeComprehension } from './utils/computeComprehension';
+import ComprehensionScoreboard from './ComprehensionScoreboard';
+import TextMetricHeatmap from './TextMetricHeatmap';
+import CorrelationPanel from './CorrelationPanel';
+import OneStopLoader from './OneStopLoader';
 
 // Helper to check if a word is punctuation
 function isPunctuation(word: string) {
@@ -18,6 +23,8 @@ function App() {
   const [sentencesPerGroup, setSentencesPerGroup] = useState(1);
   const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
   const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]}[]>([]);
+  const [onestopWordColumn, setOnestopWordColumn] = useState<string | undefined>(undefined);
+  const [onestopGroup, setOnestopGroup] = useState<Record<string,string> | undefined>(undefined);
 
   // Dynamic probabilities for Meaning Recall (updated when known/unknown words change)
   const [dynamicProbabilities, setDynamicProbabilities] = useState<number[]>([]);
@@ -223,6 +230,10 @@ function App() {
   let displayAttention = attentionData?.attention || [];
   let displayFFNActivations = attentionData?.ffnActivations || [];
   let displayProbabilities = attentionData?.probabilities || [];
+  // Derived comprehension scores
+  let benefit: number[] = [];
+  let provisionQuality: number[] = [];
+  let effort: number[] = [];
   
   // Self-attention (diagonal) is always included in score calculation
   // Immediate neighbors are always included in score calculation
@@ -287,12 +298,28 @@ function App() {
     displayFFNActivations = displayFFNActivations.map((val, i) => 
       isPunctuation(displayWords[i]) ? 0 : val
     );
+
+    // Compute knownness vector at word-level
+  const knownness = displayWords.map((_, i) =>
+      knownTokenIndices.includes(i) ? 1 : unknownTokenIndices.includes(i) ? 0 : 1
+    );
+
+    try {
+      const scores = computeComprehension(displayAttention, knownness);
+      benefit = scores.benefit;
+      provisionQuality = scores.provisionQuality;
+      effort = scores.effort;
+    } catch (e) {
+      console.warn('Comprehension computation skipped:', e);
+      benefit = provisionQuality = effort = [] as unknown as number[];
+    }
   }
 
   return (
     <div>
       <h1>Understany</h1>
-      <div style={{marginBottom: 8}}>
+    <div style={{marginBottom: 8}}>
+  <OneStopLoader onLoad={(text, meta) => { setInput(text); setOnestopWordColumn(meta?.wordColumn); setOnestopGroup(meta?.group); }} />
         <label style={{marginLeft: 16}}>
           Sentences per group:
           <input
@@ -356,6 +383,23 @@ function App() {
                 probabilities={dynamicProbabilities.length > 0 ? dynamicProbabilities : displayProbabilities}
                 originalProbabilities={originalProbabilities}
                 ffnActivations={displayFFNActivations}
+              />
+              {benefit.length > 0 && (
+                <ComprehensionScoreboard
+                  words={displayWords}
+                  benefit={benefit}
+                  provisionQuality={provisionQuality}
+                  effort={effort}
+                />
+              )}
+              {effort.length > 0 && (
+                <CorrelationPanel words={displayWords} effort={effort} wordColumn={onestopWordColumn} group={onestopGroup} />
+              )}
+              <TextMetricHeatmap
+                words={displayWords}
+                effort={effort}
+                wordColumn={onestopWordColumn}
+                group={onestopGroup}
               />
             </>
           ) : attentionError ? (

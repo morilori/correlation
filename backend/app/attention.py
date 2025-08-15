@@ -37,7 +37,7 @@ bert_model.eval()
 @router.post('/attention', response_model=AttentionResponse)
 def attention_endpoint(req: AttentionRequest):
     # Tokenize input to check length
-    inputs = bert_tokenizer(req.text, return_tensors='pt', truncation=False)
+    inputs = bert_tokenizer(req.text, return_tensors='pt', truncation=True, max_length=512)
     
     # Check if text is too long (BERT max is usually 512 tokens)
     token_length = inputs['input_ids'].shape[1]

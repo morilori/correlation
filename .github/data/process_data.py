@@ -228,21 +228,10 @@ def main():
     sentences_data = process_sentences(df)
     print(f"Found {len(sentences_data)} unique sentences")
     
-    # Filter for quality
-    print("\nFiltering sentences...")
-    filtered_sentences = filter_complete_sentences(sentences_data)
-    print(f"Kept {len(filtered_sentences)} sentences after filtering")
-    
-    # Generate sample for frontend
-    print("\nGenerating representative sample...")
-    sample_sentences = generate_sample_sentences(filtered_sentences, num_samples=25)
-    
-    # Export data
-    export_to_javascript(sample_sentences)
-    
-    # Print summary
-    print_data_summary(sample_sentences)
-    
+    # Export all sentences, not just a sample or filtered subset
+    print("\nExporting all sentences to data.js...")
+    export_to_javascript(sentences_data)
+    print_data_summary(sentences_data)
     print(f"\n✅ Processing complete!")
     print(f"📁 Output file: data.js")
     print(f"🔧 Next steps:")

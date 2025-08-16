@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 
+declare const realData: any[];
+
 interface AttentionHeatmapProps {
   words: string[];
   attention: number[][]; // attention[i][j]: how much word j attends to word i
@@ -15,6 +17,7 @@ interface AttentionHeatmapProps {
   probabilities?: number[]; // BERT prediction probabilities for each word
   originalProbabilities?: number[]; // Original BERT prediction probabilities (before known/unknown changes)
   ffnActivations?: number[]; // FFN activation counts for each word
+  sentence?: string; // The original sentence string for matching dataset metrics
 }
 
 const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
@@ -29,8 +32,13 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   punctuationIndices = [],
   probabilities = [], // Probabilities for Meaning Recall
   originalProbabilities = [], // Original probabilities for delta calculation
-  ffnActivations = []
+  ffnActivations = [],
+  sentence = ''
 }) => {
+  // Define datasetMetrics at the very top so it is available everywhere
+  const datasetMetrics = [
+    "SpringerEffort", "SpringerComprehension", "SpringerProbability", "SpringerRecall", "SpringerRetrieved", "SpringerSum", "SpringerReceived", "SpringerProvided"
+  ];
   const displayWords = words;
   // Adapt attention: unknown words only receive, not provide
   // Also, recalculate norm scores based on this modified attention
@@ -114,31 +122,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     upper: false
   });
 
-  // Function to boost word probability by increasing attention TO it
-  const boostWordProbability = (wordIndex: number, boostFactor: number = 1.5) => {
-    const modifiedAttention = attention.map(row => [...row]);
-    
-    // Increase attention TO the target word from all other words
-    for (let i = 0; i < modifiedAttention.length; i++) {
-      if (i !== wordIndex && !punctuationIndices.includes(i)) {
-        modifiedAttention[i][wordIndex] *= boostFactor;
-      }
-    }
-    
-    // Normalize rows to maintain attention sum constraints
-    modifiedAttention.forEach((row, i) => {
-      if (!unknownTokenIndices.includes(i)) {
-        const sum = row.reduce((a, b) => a + b, 0);
-        if (sum > 0) {
-          for (let j = 0; j < row.length; j++) {
-            row[j] /= sum;
-          }
-        }
-      }
-    });
-    
-    return modifiedAttention;
-  };
+  // boostWordProbability removed (unused)
 
   // Use unique ids for each word position
   const wordObjs = displayWords.map((word, idx) => ({ word, index: idx }));
@@ -1127,6 +1111,112 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           );
         })()}
       </div>
+
+
+      {/* Dataset and computed metric selection for coloring */}
+      {(() => {
+
+        // Find matching sentence in realData
+        let match = null;
+        if (typeof realData !== 'undefined' && sentence) {
+          match = realData.find((d: any) => d.sentence === sentence);
+        }
+        // Collect all metric keys from first word
+        let datasetMetricKeys: string[] = [];
+        let datasetSeries: Record<string, (number|null)[]> = {};
+        if (match) {
+          datasetMetricKeys = Object.keys(match.words[0]).filter(k => k !== 'word');
+          for (const key of datasetMetricKeys) {
+            datasetSeries[key] = match.words.map((w: any) => typeof w[key] === 'number' ? w[key] : null);
+          }
+        }
+        // Add computed metrics
+        const computedMetrics = {
+          normSum: metrics.map(m => m.normSum),
+          normReceived: metrics.map(m => m.normReceived),
+          normProvided: metrics.map(m => m.normProvided),
+          normRetrieved: metrics.map(m => m.normRetrieved),
+          normRecalled: metrics.map(m => m.normRecalled),
+        };
+        const allMetricKeys = [...datasetMetricKeys, ...Object.keys(computedMetrics)];
+        const allSeries: Record<string, (number|null)[]> = { ...datasetSeries, ...computedMetrics };
+
+        // Metric selection state
+        const [selectedMetric, setSelectedMetric] = React.useState<string>(allMetricKeys[0] || 'normSum');
+        // Update selectedMetric if metric keys change
+        React.useEffect(() => {
+          if (!allMetricKeys.includes(selectedMetric)) {
+            setSelectedMetric(allMetricKeys[0] || 'normSum');
+          }
+        }, [allMetricKeys]);
+
+        // Color array for selected metric
+        const selectedMetricArr = allSeries[selectedMetric] || metrics.map(m => m.normSum);
+        // Filter out nulls for color scale calculation
+        const finiteMetricArr = selectedMetricArr.map(v => v == null ? 0 : v);
+        const selectedMetricColorFn = getColorScale(finiteMetricArr);
+
+        // If no dataset metrics found, show a message
+        if (datasetMetricKeys.length === 0) {
+          return (
+            <div style={{margin: '16px 0', color: 'red'}}>
+              No dataset metrics found for this sentence. Only computed metrics are available.
+            </div>
+          );
+        }
+
+        return (
+          <div style={{margin: '16px 0'}}>
+            <label style={{marginRight: 8}}>Color text by metric:</label>
+            <select value={selectedMetric} onChange={e => setSelectedMetric(e.target.value)} style={{fontSize: 13, padding: '2px 6px'}}>
+              {allMetricKeys.map(key => (
+                <option key={key} value={key}>{key}</option>
+              ))}
+            </select>
+            <div style={{marginTop: 12, background: 'white', padding: 20, borderRadius: 6, fontFamily: 'Verdana, sans-serif', fontWeight: 'normal', fontSize: '12px', wordBreak: 'normal', position: 'relative', overflowX: 'auto', overflowY: 'visible'}}>
+              <div style={{display: 'flex', flexWrap: 'wrap', columnGap: '0px', rowGap: '10px', lineHeight: '1.8'}}>
+                {metrics.map((m, i) => {
+                  const isPunctuation = punctuationIndices.includes(i);
+                  const isSelected = selectedTokenIndices.includes(i);
+                  const value = selectedMetricArr[i];
+                  // ...existing code for band, background, fontStyle, etc...
+                  return (
+                    <span
+                      key={m.index}
+                      style={{
+                        background: isPunctuation ? 'white' : selectedMetricColorFn(value == null ? 0 : value),
+                        color: m.isUnknown ? '#00AAFF' : (isPunctuation ? '#000' : '#000'),
+                        borderRadius: '3px',
+                        textAlign: 'center',
+                        padding: isSelected ? '2px 6px' : '4px 8px',
+                        display: 'inline-block',
+                        fontWeight: 'normal',
+                        fontStyle: 'normal',
+                        cursor: 'pointer',
+                        border: isSelected ? '2px solid #0072B2' : 'none',
+                        transition: 'border 0.1s',
+                        textDecoration: m.isUnknown ? 'underline wavy #00AAFF' : undefined,
+                        whiteSpace: 'nowrap',
+                      }}
+                      onClick={() => {
+                        if (!setSelectedTokenIndices) return;
+                        setSelectedTokenIndices(
+                          isSelected 
+                            ? selectedTokenIndices.filter(idx => idx !== i)
+                            : [...selectedTokenIndices, i]
+                        );
+                      }}
+                      title={typeof value === 'number' ? `${selectedMetric}: ${value.toFixed(3)}` : ''}
+                    >
+                      {m.word.replace(/##/g, '')}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Word Attention Heatmap toggle and display moved to bottom */}
       <div style={{marginTop: 32, marginBottom: 16}}>

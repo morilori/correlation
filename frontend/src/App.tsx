@@ -3,9 +3,10 @@ import './App.css';
 import AttentionHeatmap from './AttentionHeatmap';
 import { computeComprehension } from './utils/computeComprehension';
 import ComprehensionScoreboard from './ComprehensionScoreboard';
-import TextMetricHeatmap from './TextMetricHeatmap';
 import CorrelationPanel from './CorrelationPanel';
-import OneStopLoader from './OneStopLoader';
+
+// Remove: import realData from '../public/data/data.js';
+declare const realData: any[];
 
 // Helper to check if a word is punctuation
 function isPunctuation(word: string) {
@@ -23,12 +24,27 @@ function App() {
   const [sentencesPerGroup, setSentencesPerGroup] = useState(1);
   const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
   const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]}[]>([]);
-  const [onestopWordColumn, setOnestopWordColumn] = useState<string | undefined>(undefined);
-  const [onestopGroup, setOnestopGroup] = useState<Record<string,string> | undefined>(undefined);
+  // OneStop integration removed: onestop metadata/state no longer used
 
   // Dynamic probabilities for Meaning Recall (updated when known/unknown words change)
   const [dynamicProbabilities, setDynamicProbabilities] = useState<number[]>([]);
   const [originalProbabilities, setOriginalProbabilities] = useState<number[]>([]);
+
+  // Sentence selection state
+  const [selectedSentenceIdx, setSelectedSentenceIdx] = useState(0);
+
+
+  // Get current sentence data from realData
+  const sentenceData = realData && realData.length > 0 ? realData[selectedSentenceIdx] : null;
+  const words = sentenceData ? sentenceData.words.map((w: any) => w.word) : [];
+  const datasetEffort = sentenceData ? (sentenceData.words.map((w: any) => w.effort ?? 0)) : [];
+
+  // Always use dataset sentence for visualization
+  useEffect(() => {
+    if (sentenceData && sentenceData.sentence) {
+      setInput(sentenceData.sentence);
+    }
+  }, [selectedSentenceIdx]);
 
   // Fetch dynamic probabilities for Meaning Recall when known/unknown indices change
   useEffect(() => {
@@ -319,7 +335,7 @@ function App() {
     <div>
       <h1>Understany</h1>
     <div style={{marginBottom: 8}}>
-  <OneStopLoader onLoad={(text, meta) => { setInput(text); setOnestopWordColumn(meta?.wordColumn); setOnestopGroup(meta?.group); }} />
+      {/* OneStop loader removed */}
         <label style={{marginLeft: 16}}>
           Sentences per group:
           <input
@@ -340,6 +356,7 @@ function App() {
           cols={60} 
           placeholder="Enter text..."
           style={{width: '100%', fontFamily: 'monospace', boxSizing: 'border-box', minHeight: 80, resize: 'vertical'}}
+          disabled={true}
         />
         {input.trim() && getSentenceGroups(input, sentencesPerGroup).length > 1 && (
           <div style={{marginTop: 2, fontSize: '0.8em', color: '#666'}}>
@@ -383,6 +400,7 @@ function App() {
                 probabilities={dynamicProbabilities.length > 0 ? dynamicProbabilities : displayProbabilities}
                 originalProbabilities={originalProbabilities}
                 ffnActivations={displayFFNActivations}
+                sentence={sentenceData ? sentenceData.sentence : ''}
               />
               {benefit.length > 0 && (
                 <ComprehensionScoreboard
@@ -393,14 +411,8 @@ function App() {
                 />
               )}
               {effort.length > 0 && (
-                <CorrelationPanel words={displayWords} effort={effort} wordColumn={onestopWordColumn} group={onestopGroup} />
+                <CorrelationPanel words={displayWords} effort={effort} />
               )}
-              <TextMetricHeatmap
-                words={displayWords}
-                effort={effort}
-                wordColumn={onestopWordColumn}
-                group={onestopGroup}
-              />
             </>
           ) : attentionError ? (
             <div style={{color: '#00AAFF', fontSize: '0.9em'}}>{attentionError}</div>
@@ -409,6 +421,21 @@ function App() {
           )}
         </div>
       )}
+      {/* Sentence selector */}
+      <div style={{ margin: '1em 0' }}>
+        <label htmlFor="sentence-select">Select sentence from dataset: </label>
+        <select
+          id="sentence-select"
+          value={selectedSentenceIdx}
+          onChange={e => setSelectedSentenceIdx(Number(e.target.value))}
+        >
+          {realData.map((s: any, i: number) => (
+            <option key={i} value={i}>{s.sentence}</option>
+          ))}
+        </select>
+      </div>
+      {/* Pass selected sentence data to visualizations */}
+      {/* Remove broken and duplicate TextMetricHeatmap usage */}
     </div>
   )
 }

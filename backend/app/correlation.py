@@ -635,180 +635,30 @@ def _align_indices(words: List[str], dataset_words: List[str]) -> List[int]:
     return best_map
 
 
-@router.post("/effort-correlation", response_model=EffortCorrelationResponse)
-def correlate_effort(req: EffortCorrelationRequest):
-    words = req.words
-    effort = np.asarray(req.effort, dtype=float)
-    if len(words) != len(effort):
-        n = min(len(words), len(effort))
-        words = words[:n]
-        effort = effort[:n]
 
-    df = _load_dataset()
-    # If a group is provided, filter dataset to that group for better alignment
-    if req.group:
-        group_cols, _ = _get_group_columns(df)
-        if group_cols:
-            sel = df
-            for col in group_cols:
-                if col in req.group:
-                    sel = sel[sel[col].astype(str) == str(req.group[col])]
-            if not sel.empty:
-                # sort by order columns if available for consistent sequence
-                order_cols = _get_order_columns(df)
-                df = sel.sort_values(order_cols) if order_cols else sel
-    # Try paragraph-based alignment if a paragraph column exists in this group
-    para_col = _preferred_word_column(df)
-    pos_col = _get_word_position_column(df)
-    used_column = None
-    if para_col is not None:
-        para_series = df[para_col].dropna()
-        para_text = str(para_series.iloc[0]) if not para_series.empty else ""
-        dataset_words = _split_tokens_from_paragraph(para_text)
-        idx_map = _align_indices(words, dataset_words)
-        used_column = para_col
-        # Try multiple candidate position columns for aggregation if the default isn't ideal
-        if pos_col is None:
-            pos_candidates: List[str] = _candidate_position_columns(df, para_len=len(dataset_words))
-        else:
-            pos_candidates = [pos_col] + [c for c in _candidate_position_columns(df, para_len=len(dataset_words)) if c != pos_col]
-    else:
-        # Fallback to token column alignment
-        if req.word_column and req.word_column in df.columns and str(req.word_column).strip().lower() != "paragraph":
-            token_col = req.word_column
-        else:
-            token_col = _get_token_column(df)
-        dataset_words = df[token_col].astype(str).tolist()
-        idx_map = _align_indices(words, dataset_words)
-        used_column = token_col
+# New generic metric correlation endpoint
+class MetricCorrelationRequest(BaseModel):
+    metrics: Dict[str, List[float]]  # e.g. {"effort": [...], "cloze": [...], ...}
 
-    # If we used token-column alignment, try alternative candidate token columns and keep the best
-    if used_column is not None and str(used_column).strip().lower() != "paragraph":
-        matched_rows: List[int] = [j for j in idx_map if j >= 0]
-        best_match_count = len(matched_rows)
-        token_col = str(used_column)
-        best_token_col = token_col
-        best_map = idx_map
-        if best_match_count < max(5, int(0.1 * len(words))):
-            for cand in _candidate_token_columns(df):
-                if cand == token_col:
-                    continue
-                dw = df[cand].astype(str).tolist()
-                m = _align_indices(words, dw)
-                cnt = sum(1 for j in m if j >= 0)
-                if cnt > best_match_count:
-                    best_match_count = cnt
-                    best_token_col = cand
-                    best_map = m
-        used_column = best_token_col
-        idx_map = best_map
+class MetricCorrelationResponse(BaseModel):
+    correlation_matrix: Dict[str, Dict[str, float]]  # {metric1: {metric2: corr, ...}, ...}
 
-    # Build per-position aggregation if we used paragraph alignment with a word position column
-    # Prefer the explicitly requested metrics; fall back to heuristic if unavailable
-    metrics = _preferred_metric_columns(df)
-    if not metrics:
-        metrics = _numeric_metric_columns(df)
-    else:
-        # Work on a numeric-coerced copy for these columns to ensure proper correlation
-        df = df.copy()
-        for c in metrics:
-            try:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-            except Exception:
-                pass
-    eff_vec: List[float] = []
-    y_by_metric: Dict[str, List[float]] = {m: [] for m in metrics}
-    matched_positions: List[int] = []
-    if para_col is not None and metrics:
-        # Try each candidate position column until we get the best coverage
-        best_eff: List[float] = []
-        best_y_by: Dict[str, List[float]] = {}
-        best_count = -1
-        for pcol in (pos_candidates if 'pos_candidates' in locals() else []):
-            try:
-                grouped = df.groupby(pcol)[metrics].mean(numeric_only=True)
-            except Exception:
-                continue
-            if grouped.empty:
-                continue
-            try:
-                base = int(grouped.index.min())
-            except Exception:
-                base = 0
-            tmp_eff: List[float] = []
-            tmp_y_by: Dict[str, List[float]] = {m: [] for m in metrics}
-            tmp_count = 0
-            for i, j in enumerate(idx_map):
-                if j < 0:
-                    continue
-                pos = j + base
-                if pos in grouped.index:
-                    tmp_count += 1
-                    tmp_eff.append(float(effort[i]))
-                    row = grouped.loc[pos]
-                    for m in metrics:
-                        try:
-                            tmp_y_by[m].append(float(row[m]))
-                        except Exception:
-                            tmp_y_by[m].append(np.nan)
-            if tmp_count > best_count:
-                best_count = tmp_count
-                best_eff = tmp_eff
-                best_y_by = tmp_y_by
-        eff_vec = best_eff
-        y_by_metric = best_y_by
-        matched_count = len(eff_vec)
-    else:
-        # Fallback: original row-based matching
-        matched_rows = [j for j in idx_map if j >= 0]
-        matched_count = len(matched_rows)
-        eff_vec = [effort[i] for i, j in enumerate(idx_map) if j >= 0]
-    if matched_count == 0:
-        return EffortCorrelationResponse(
-            matched_count=0,
-            total_words=len(words),
-            metric_correlations={},
-            used_columns=[],
-            token_column=str(used_column) if used_column is not None else None,
-        )
-
-    corrs: Dict[str, float] = {}
-    used_cols: List[str] = []
-    eff_arr = np.asarray(eff_vec, dtype=float)
-    if para_col is not None and pos_col is not None and metrics and len(eff_arr) > 1:
-        for c in metrics:
-            y_list = [v for v in y_by_metric.get(c, []) if np.isfinite(v)]
-            # Ensure lengths match by trimming
-            n = min(len(y_list), len(eff_arr))
-            if n >= 3:
-                y = np.asarray(y_list[:n], dtype=float)
-                x = eff_arr[:n]
-                if np.nanstd(y) > 0 and np.nanstd(x) > 0:
-                    r = np.corrcoef(x, y)[0, 1]
-                    if np.isfinite(r):
-                        corrs[c] = float(r)
-                        used_cols.append(c)
-    else:
-        # Fallback: row-aligned correlation
-        for c in metrics:
-            try:
-                y = df.iloc[[j for j in idx_map if j >= 0]][c].astype(float).to_numpy()
-                n = min(len(y), len(eff_arr))
-                if n >= 3:
-                    y = y[:n]
-                    x = eff_arr[:n]
-                    if np.nanstd(y) > 0 and np.nanstd(x) > 0:
-                        r = np.corrcoef(x, y)[0, 1]
-                        if np.isfinite(r):
-                            corrs[c] = float(r)
-                            used_cols.append(c)
-            except Exception:
-                continue
-
-    return EffortCorrelationResponse(
-        matched_count=matched_count,
-        total_words=len(words),
-        metric_correlations=corrs,
-        used_columns=used_cols,
-    token_column=str(used_column) if used_column is not None else None,
-    )
+@router.post("/metric-correlation", response_model=MetricCorrelationResponse)
+def correlate_metrics(req: MetricCorrelationRequest):
+    metrics = req.metrics
+    metric_names = list(metrics.keys())
+    n = min(len(v) for v in metrics.values()) if metrics else 0
+    # Truncate all series to same length
+    arrs = {k: np.asarray(v[:n], dtype=float) for k, v in metrics.items()}
+    corr_matrix = {}
+    for i, m1 in enumerate(metric_names):
+        corr_matrix[m1] = {}
+        for j, m2 in enumerate(metric_names):
+            x = arrs[m1]
+            y = arrs[m2]
+            if n >= 3 and np.nanstd(x) > 0 and np.nanstd(y) > 0:
+                r = np.corrcoef(x, y)[0, 1]
+                corr_matrix[m1][m2] = float(r) if np.isfinite(r) else float('nan')
+            else:
+                corr_matrix[m1][m2] = float('nan')
+    return MetricCorrelationResponse(correlation_matrix=corr_matrix)

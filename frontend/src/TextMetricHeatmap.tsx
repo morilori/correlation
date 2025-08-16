@@ -1,77 +1,64 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+
+declare const realData: any[];
 
 type SeriesMap = Record<string, (number | null)[]>;
 
 interface Props {
   words: string[];
   effort: number[];
+  normSum?: number[];
+  normReceived?: number[];
+  normProvided?: number[];
+  normRetrieved?: number[];
+  normRecalled?: number[];
   backendUrl?: string;
   wordColumn?: string;
   group?: Record<string, string>;
 }
 
-type MetricsListResponse = { metrics: string[] };
-type AlignedSeriesResponse = {
-  matched_count: number;
-  total_words: number;
-  series: Record<string, Array<number | null>>;
-  used_columns: string[];
-  token_column?: string;
-};
-
-export default function TextMetricHeatmap({ words, effort, backendUrl = 'http://localhost:8000', wordColumn, group }: Props) {
+export default function TextMetricHeatmap({ words, effort, normSum = [], normReceived = [], normProvided = [], normRetrieved = [], normRecalled = [] }: Props) {
   const [availableMetrics, setAvailableMetrics] = useState<string[]>([]);
   const [seriesByMetric, setSeriesByMetric] = useState<SeriesMap>({});
   const [selected, setSelected] = useState<string>('Effort');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // punctuation indices
   const punctuationIndices = useMemo(() => words.map((w, i) => (/^[\p{P}\p{S}]+$/u.test(w) ? i : -1)).filter(i => i !== -1), [words]);
 
-  // Fetch metrics list once
+  // Load metrics from realData
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${backendUrl}/onestop/metrics`);
-        if (!res.ok) throw new Error(`Failed to load metrics (${res.status})`);
-        const data: MetricsListResponse = await res.json();
-        if (!cancelled) setAvailableMetrics(data.metrics || []);
-      } catch (e) {
-        if (!cancelled) setAvailableMetrics([]);
+    if (!words.length) return;
+    // Find matching sentence in realData
+    const match = realData.find((d: any) => {
+      return d.words && d.words.length === words.length && d.words.every((w: any, i: number) => w.word === words[i]);
+    });
+    // Collect all metric keys from first word
+    let metricKeys: string[] = [];
+    let map: SeriesMap = {};
+    if (match) {
+      metricKeys = Object.keys(match.words[0]).filter(k => k !== 'word');
+      for (const key of metricKeys) {
+        map[key] = match.words.map((w: any) => typeof w[key] === 'number' ? w[key] : null);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [backendUrl]);
-
-  // Fetch aligned series for all metrics whenever words/metadata change
-  useEffect(() => {
-    if (!words.length || !availableMetrics.length) { setSeriesByMetric({}); return; }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    (async () => {
-      try {
-        const res = await fetch(`${backendUrl}/onestop/aligned-series`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ words, metrics: availableMetrics, word_column: wordColumn, group })
-        });
-        if (!res.ok) throw new Error(`Failed to load aligned series (${res.status})`);
-        const data: AlignedSeriesResponse = await res.json();
-        if (!cancelled) setSeriesByMetric(data.series || {});
-      } catch (e) {
-        if (!cancelled) {
-          setSeriesByMetric({});
-          setError(e instanceof Error ? e.message : String(e));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    }
+    // Add computed metrics from props
+    const computedMetrics = {
+      normSum,
+      normReceived,
+      normProvided,
+      normRetrieved,
+      normRecalled,
+      effort,
+    };
+    for (const [key, arr] of Object.entries(computedMetrics)) {
+      if (arr.length === words.length) {
+        if (!metricKeys.includes(key)) metricKeys.push(key);
+        map[key] = arr;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [backendUrl, words, availableMetrics, wordColumn, group]);
+    }
+    setAvailableMetrics(metricKeys);
+    setSeriesByMetric(map);
+  }, [words, effort, normSum, normReceived, normProvided, normRetrieved, normRecalled]);
 
   // Build current value array for coloring
   const values: Array<number | null> = useMemo(() => {
@@ -109,31 +96,31 @@ export default function TextMetricHeatmap({ words, effort, backendUrl = 'http://
         <label style={{ fontSize: 13 }}>
           Color by:
           <select value={selected} onChange={e => setSelected(e.target.value)} style={{ marginLeft: 6 }}>
-            {options.map(m => (
-              <option key={m} value={m}>{m}</option>
+            {options.map(opt => (
+              <option key={opt} value={opt}>{opt}</option>
             ))}
           </select>
         </label>
-        {loading && <span style={{ fontSize: 12, color: '#888' }}>loading…</span>}
-        {error && <span style={{ fontSize: 12, color: 'var(--color-danger)' }}>{error}</span>}
       </div>
-      <div style={{ background: '#fff', padding: 16, borderRadius: 6, lineHeight: 1.8 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 6px' }}>
-          {words.map((w, i) => (
-            <span
-              key={i}
-              title={`${w}${values[i] != null && !Number.isNaN(values[i] as number) ? ` • ${selected}: ${(values[i] as number).toFixed(3)}` : ''}`}
-              style={{
-                background: colorFn(values[i] as number | null, i),
-                borderRadius: 4,
-                padding: '2px 6px',
-                border: '1px solid #e6f3ff'
-              }}
-            >
-              {w}
-            </span>
-          ))}
-        </div>
+      {/* Render word heatmap */}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
+        {words.map((word, i) => (
+          <span
+            key={i}
+            style={{
+              background: colorFn(values[i], i),
+              padding: '0.5em 0.7em',
+              borderRadius: 6,
+              margin: '2px 1px',
+              border: punctuationIndices.includes(i) ? '1px dashed #aaa' : 'none',
+              fontWeight: punctuationIndices.includes(i) ? 400 : 500,
+              color: punctuationIndices.includes(i) ? '#888' : undefined,
+            }}
+            title={values[i] != null ? `${selected}: ${values[i]}` : undefined}
+          >
+            {word}
+          </span>
+        ))}
       </div>
     </div>
   );

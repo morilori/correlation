@@ -1,3 +1,111 @@
+from backend.app.attention import bert_tokenizer, bert_model
+from backend.app.complete_analysis import comprehension_effort
+import torch
+import numpy as np
+
+def enrich_with_all_computed_metrics(sentences_data):
+    """
+    For each sentence, run BERT attention and comprehension pipeline,
+    and attach all computed metrics to each word.
+    """
+    for sentence in sentences_data:
+        sentence_text = sentence['sentence']
+        words_data = sentence['words']
+
+        # Tokenize and get attention from BERT
+        inputs = bert_tokenizer(sentence_text, return_tensors='pt', truncation=True, max_length=512)
+        with torch.no_grad():
+            outputs = bert_model(**inputs)
+            attn = torch.stack(outputs.attentions)  # (num_layers, batch, num_heads, seq_len, seq_len)
+            attn = attn.sum(dim=0).sum(dim=1)[0]  # (seq_len, seq_len)
+            attn = attn.cpu().detach().numpy()
+
+            # FFN activation counts
+            ffn_counts_dict = bert_model.get_ffn_activation_counts()
+            seq_len = inputs['input_ids'].shape[1]
+            ffn_activations = [0.0] * seq_len
+            for layer_idx, counts in ffn_counts_dict.items():
+                layer_counts = counts[0].cpu().detach().numpy()
+                for i in range(min(len(ffn_activations), len(layer_counts))):
+                    ffn_activations[i] += layer_counts[i]
+
+            # Prediction probabilities (normRecalled)
+            tokens_for_probs = bert_tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+            probabilities = []
+            input_ids = inputs['input_ids'][0]
+            for i, token in enumerate(tokens_for_probs):
+                if token in ['[CLS]', '[SEP]']:
+                    probabilities.append(1.0)
+                    continue
+                masked_input_ids = input_ids.clone()
+                masked_input_ids[i] = bert_tokenizer.mask_token_id
+                masked_inputs = {k: v.clone() for k, v in inputs.items()}
+                masked_inputs['input_ids'][0] = masked_input_ids
+                outputs_masked = bert_model(**masked_inputs)
+                logits = outputs_masked.logits[0, i]
+                probs = torch.softmax(logits, dim=-1)
+                orig_id = input_ids[i].item()
+                prob = probs[orig_id].item()
+                probabilities.append(prob)
+
+        # Remove [CLS] and [SEP] tokens if present
+        tokens = bert_tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+        if tokens[0] == '[CLS]':
+            attn = attn[1:, 1:]
+            ffn_activations = ffn_activations[1:]
+            probabilities = probabilities[1:]
+            tokens = tokens[1:]
+        if tokens and tokens[-1] == '[SEP]':
+            attn = attn[:-1, :-1]
+            ffn_activations = ffn_activations[:-1]
+            probabilities = probabilities[:-1]
+            tokens = tokens[:-1]
+
+        n = len(tokens)
+        knownness = np.ones(n)  # or use actual knownness if available
+
+        # Compute comprehension metrics
+        integration, contribution, effort = comprehension_effort(attn, knownness)
+
+        # Compute normSum, normReceived, normProvided
+        normReceived = attn.sum(axis=0)
+        normProvided = attn.sum(axis=1)
+        minReceived, maxReceived = normReceived.min(), normReceived.max()
+        minProvided, maxProvided = normProvided.min(), normProvided.max()
+        normReceived = (normReceived - minReceived) / (maxReceived - minReceived) if maxReceived > minReceived else np.zeros(n)
+        normProvided = (normProvided - minProvided) / (maxProvided - minProvided) if maxProvided > minProvided else np.zeros(n)
+        normSum = normReceived + normProvided
+
+        # Use actual FFN activations and probabilities
+        normRetrieved = np.array(ffn_activations)
+        normRecalled = np.array(probabilities)
+
+        # Attach all metrics to each word
+        for i, word in enumerate(words_data):
+            if i < n:
+                word['integration'] = float(integration[i])
+                word['contribution'] = float(contribution[i])
+                word['effort'] = float(effort[i])
+                word['benefit'] = float(integration[i])
+                word['provisionQuality'] = float(contribution[i])
+                word['normSum'] = float(normSum[i])
+                word['normReceived'] = float(normReceived[i])
+                word['normProvided'] = float(normProvided[i])
+                word['normRetrieved'] = float(normRetrieved[i])
+                word['normRecalled'] = float(normRecalled[i])
+            else:
+                word['integration'] = None
+                word['contribution'] = None
+                word['effort'] = None
+                word['benefit'] = None
+                word['provisionQuality'] = None
+                word['normSum'] = None
+                word['normReceived'] = None
+                word['normProvided'] = None
+                word['normRetrieved'] = None
+                word['normRecalled'] = None
+
+    return sentences_data
 """
 Data Processing Script for Prediction Resource Dataset
 
@@ -20,7 +128,7 @@ import json
 import numpy as np
 from collections import defaultdict
 
-def load_data(csv_file='all_measures.csv'):
+def load_data(csv_file='./.github/data/all_measures.csv'):
     """Load the CSV data from the prediction-resource dataset."""
     try:
         df = pd.read_csv(csv_file)
@@ -227,7 +335,11 @@ def main():
     print("\nProcessing sentences...")
     sentences_data = process_sentences(df)
     print(f"Found {len(sentences_data)} unique sentences")
-    
+
+    # Enrich with BERT attention and computed metrics
+    print("\nEnriching sentences with BERT attention and computed metrics...")
+    sentences_data = enrich_with_all_computed_metrics(sentences_data)
+
     # Export all sentences, not just a sample or filtered subset
     print("\nExporting all sentences to data.js...")
     export_to_javascript(sentences_data)

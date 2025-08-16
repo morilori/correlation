@@ -1,97 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { computeComprehension, computeEffortTimeline } from './utils/computeComprehension';
-// --- Correlation matrix helpers ---
-const computedMetricNames = [
-  'normSum', 'normReceived', 'normProvided', 'normRetrieved', 'normRecalled',
-  'integration', 'contribution', 'effort', 'benefit', 'provisionQuality'
-];
-const metricNames = [
-  ...computedMetricNames,
-  'cloze_p_smoothed', 'rating_mean', 'rating_sd', 'cloze_s', 'competition', 'entropy',
-  's_GPT2', 's_GPT2_medium', 's_GPT2_large', 's_GPT2_xl',
-  's_GPTNeo_125M', 's_GPTNeo', 's_GPTNeo_2.7B',
-  'rnn', 'psg', 'bigram', 'trigram', 'tetragram',
-  'RTfirstfix', 'RTfirstpass', 'RTgopast', 'RTrightbound', 'self_paced_reading_time',
-  'ELAN', 'LAN', 'N400', 'EPNP', 'P600', 'PNP'
-];
-
-function computeCorrelationMatrix(data: any[], metrics: string[]): number[][] {
-  const n = metrics.length;
-  const values: number[][] = metrics.map(() => []);
-  for (const sentenceIdx in data) {
-    const sentence = data[sentenceIdx];
-    if (!Array.isArray(sentence.words)) continue;
-    // Compute all computed metrics for this sentence
-    // Use the same logic as for the selected sentence
-    // For this, we need to reconstruct the arrays for each metric
-    // Use dummy attention and knownness arrays if not present
-    const attention = sentence.attention || [];
-    const knownness = sentence.knownness || undefined;
-    // Compute comprehension metrics if available
-    let comp: any = {};
-    try {
-      // Use imported computeComprehension if available
-      if (typeof computeComprehension === 'function' && attention.length) {
-        comp = computeComprehension(attention, knownness);
-      }
-    } catch {}
-    // Compute effort timeline if available
-    let effortArr: number[] = [];
-    try {
-      if (typeof computeEffortTimeline === 'function' && attention.length) {
-        const timeline = computeEffortTimeline(attention, knownness);
-        if (Array.isArray(timeline) && timeline.length) effortArr = timeline[timeline.length - 1];
-      }
-    } catch {}
-    // Compose computed metrics for each word
-    for (let i = 0; i < sentence.words.length; ++i) {
-      const wordObj = sentence.words[i];
-      for (let j = 0; j < n; ++j) {
-        const metricName = metrics[j];
-        let v: number | undefined = undefined;
-        if (computedMetricNames.includes(metricName)) {
-          // Fill computed metrics
-          if (metricName === 'normSum') v = (wordObj.normSum ?? comp.benefit?.[i] ?? undefined);
-          else if (metricName === 'normReceived') v = (wordObj.normReceived ?? comp.benefit?.[i] ?? undefined);
-          else if (metricName === 'normProvided') v = (wordObj.normProvided ?? comp.provisionQuality?.[i] ?? undefined);
-          else if (metricName === 'normRetrieved') v = (wordObj.normRetrieved ?? undefined);
-          else if (metricName === 'normRecalled') v = (wordObj.normRecalled ?? undefined);
-          else if (metricName === 'integration') v = comp.benefit?.[i];
-          else if (metricName === 'contribution') v = comp.provisionQuality?.[i];
-          else if (metricName === 'effort') v = effortArr[i];
-          else if (metricName === 'benefit') v = comp.benefit?.[i];
-          else if (metricName === 'provisionQuality') v = comp.provisionQuality?.[i];
-        } else {
-          v = wordObj[metricName];
-        }
-        if (typeof v === 'number' && !isNaN(v)) values[j].push(v);
-      }
-    }
-  }
-  const corr = Array.from({ length: n }, () => Array(n).fill(0));
-  for (let i = 0; i < n; ++i) {
-    for (let j = 0; j < n; ++j) {
-      corr[i][j] = pearson(values[i], values[j]);
-    }
-  }
-  return corr;
-}
-
-function pearson(a: number[], b: number[]): number {
-  if (!a.length || !b.length || a.length !== b.length) return NaN;
-  const n = a.length;
-  const meanA = a.reduce((s, v) => s + v, 0) / n;
-  const meanB = b.reduce((s, v) => s + v, 0) / n;
-  let num = 0, denomA = 0, denomB = 0;
-  for (let i = 0; i < n; ++i) {
-    const da = a[i] - meanA;
-    const db = b[i] - meanB;
-    num += da * db;
-    denomA += da * da;
-    denomB += db * db;
-  }
-  return denomA && denomB ? num / Math.sqrt(denomA * denomB) : NaN;
-}
+import React, { useState, useEffect } from 'react';
 
 declare const realData: any[];
 
@@ -263,7 +170,7 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
     normalizedSums = updatedRawSums.map((sum, i) => 
       punctuationIndices.includes(i) 
         ? 0  // Set punctuation normSum to 0
-        : (maxUpdatedRawSum - minUpdatedRawSum ? (sum - minUpdatedRawSum) / (maxUpdatedRawSum - minUpdatedRawSum) : 0)
+  : (maxUpdatedRawSum - minUpdatedRawSum ? (sum - minUpdatedRawSum) / (maxUpdatedRawSum - minUpdatedRawSum) : 0)
     );
   }
   
@@ -406,15 +313,6 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   // State to show/hide the Word Attention Heatmap
   const [showWordHeatmap, setShowWordHeatmap] = useState(false);
   // ...existing code...
-
-  // Correlation matrix state
-  const [corrSentenceCount, setCorrSentenceCount] = useState(20);
-  const corrMatrix = useMemo(() => {
-    if (!Array.isArray(realData)) return null;
-    const count = Math.max(1, Math.min(205, corrSentenceCount));
-    const selected = realData.slice(0, count);
-    return computeCorrelationMatrix(selected, metricNames);
-  }, [corrSentenceCount]);
   // ...existing code...
   // ...existing code...
 
@@ -1222,18 +1120,24 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
       {/* Dataset and computed metric selection for coloring */}
       {(() => {
 
-        // Find matching sentence in realData
-        let match = null;
+        // Find matching sentences in realData
+        let matches: any[] = [];
         if (typeof realData !== 'undefined' && sentence) {
-          match = realData.find((d: any) => d.sentence === sentence);
+          const sentenceList = sentence.split(' | ');
+          matches = realData.filter((d: any) => sentenceList.includes(d.sentence));
         }
-        // Collect all metric keys from first word
+        // Aggregate dataset metrics if multiple matches
         let datasetMetricKeys: string[] = [];
         let datasetSeries: Record<string, (number|null)[]> = {};
-        if (match) {
-          datasetMetricKeys = Object.keys(match.words[0]).filter(k => k !== 'word');
+        if (matches.length > 0) {
+          datasetMetricKeys = Object.keys(matches[0].words[0]).filter(k => k !== 'word');
           for (const key of datasetMetricKeys) {
-            datasetSeries[key] = match.words.map((w: any) => typeof w[key] === 'number' ? w[key] : null);
+            // Average across all matches
+            const arrs = matches.map(m => m.words.map((w: any) => typeof w[key] === 'number' ? w[key] : null));
+            datasetSeries[key] = arrs[0].map((_, i) => {
+              const vals = arrs.map(a => a[i]).filter(v => v !== null);
+              return vals.length ? vals.reduce((sum, v) => sum + (v as number), 0) / vals.length : null;
+            });
           }
         }
         // Compute integration, contribution, effort, benefit, and provisionQuality metrics
@@ -1341,40 +1245,95 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
 
         // --- Correlation Matrix for all metrics ---
         const correlationMetricKeys: string[] = allMetricKeys;
-        // Align all metric arrays by filtering out indices where any metric is missing/null/NaN
-        const metricArrays: number[][] = correlationMetricKeys.map((key: string) => (allSeries[key] || []).map((v: number | null) => typeof v === 'number' && !isNaN(v) ? v : null));
-        // Find indices where all metrics are valid (no nulls)
-        const validIndices: number[] = [];
-        if (metricArrays.length > 0) {
-          for (let i = 0; i < metricArrays[0].length; i++) {
-            let allValid = true;
-            for (let arr of metricArrays) {
-              if (arr[i] == null) {
-                allValid = false;
-                break;
+        // If multiple matches, aggregate correlation matrices
+        let corrMatrix: number[][] = [];
+        if (matches.length > 1) {
+          // For each sentence, build its metric arrays and correlation matrix
+          const matrices: number[][][] = matches.map(match => {
+            const metricArrays: number[][] = correlationMetricKeys.map((key: string) => {
+              let arr: number[] = [];
+              if (Object.keys(match.words[0]).includes(key)) {
+                arr = match.words.map((w: any) => typeof w[key] === 'number' && !isNaN(w[key]) ? w[key] : 0);
+              } else if (key in computedMetrics) {
+                arr = (computedMetrics as Record<string, number[]>)[key].map((v: number) => typeof v === 'number' && !isNaN(v) ? v : 0);
+              }
+              return arr;
+            });
+            // Find valid indices
+            const validIndices: number[] = [];
+            if (metricArrays.length > 0) {
+              for (let i = 0; i < metricArrays[0].length; i++) {
+                let allValid = true;
+                for (let arr of metricArrays) {
+                  if (arr[i] == null) {
+                    allValid = false;
+                    break;
+                  }
+                }
+                if (allValid) validIndices.push(i);
               }
             }
-            if (allValid) validIndices.push(i);
+          const filteredMetricArrays: number[][] = metricArrays.map(arr => validIndices.map(i => arr[i]));
+            // Pearson correlation
+            function pearson(x: number[], y: number[]): number {
+              const n = x.length;
+              if (n === 0) return 0;
+              const meanX = x.reduce((a: number, b: number) => a + b, 0) / n;
+              const meanY = y.reduce((a: number, b: number) => a + b, 0) / n;
+              const num = x.reduce((sum: number, xi: number, i: number) => sum + (xi - meanX) * (y[i] - meanY), 0);
+              const denX = Math.sqrt(x.reduce((sum: number, xi: number) => sum + (xi - meanX) ** 2, 0));
+              const denY = Math.sqrt(y.reduce((sum: number, yi: number) => sum + (yi - meanY) ** 2, 0));
+              const den = denX * denY;
+              return den === 0 ? 0 : num / den;
+            }
+            return filteredMetricArrays.map((col1: number[]) =>
+              filteredMetricArrays.map((col2: number[]) => pearson(col1, col2))
+            );
+          });
+          // Average matrices cell-wise
+          const rows = matrices[0].length;
+          const cols = matrices[0][0].length;
+          corrMatrix = Array.from({ length: rows }, (_, i) =>
+            Array.from({ length: cols }, (_, j) =>
+              matrices.map(m => m[i][j]).reduce((sum, v) => sum + v, 0) / matrices.length
+            )
+          );
+        } else {
+          // Single sentence: use previous logic
+          // Align all metric arrays by filtering out indices where any metric is missing/null/NaN
+          const metricArrays: number[][] = correlationMetricKeys.map((key: string) => (allSeries[key] || []).map((v: number | null) => typeof v === 'number' && !isNaN(v) ? v : 0));
+          const validIndices: number[] = [];
+          if (metricArrays.length > 0) {
+            for (let i = 0; i < metricArrays[0].length; i++) {
+              let allValid = true;
+              for (let arr of metricArrays) {
+                if (typeof arr[i] !== 'number' || isNaN(arr[i])) {
+                  allValid = false;
+                  break;
+                }
+              }
+              if (allValid) validIndices.push(i);
+            }
           }
+          // Build filtered metric arrays, guaranteed to be number[]
+          const filteredMetricArrays: number[][] = metricArrays.map(arr => validIndices.map(i => arr[i]));
+          // Pearson correlation
+          function pearson(x: number[], y: number[]): number {
+            const n = x.length;
+            if (n === 0) return 0;
+            const meanX = x.reduce((a: number, b: number) => a + b, 0) / n;
+            const meanY = y.reduce((a: number, b: number) => a + b, 0) / n;
+            const num = x.reduce((sum: number, xi: number, i: number) => sum + (xi - meanX) * (y[i] - meanY), 0);
+            const denX = Math.sqrt(x.reduce((sum: number, xi: number) => sum + (xi - meanX) ** 2, 0));
+            const denY = Math.sqrt(y.reduce((sum: number, yi: number) => sum + (yi - meanY) ** 2, 0));
+            const den = denX * denY;
+            return den === 0 ? 0 : num / den;
+          }
+          // Build correlation matrix
+          corrMatrix = filteredMetricArrays.map((col1: number[]) =>
+            filteredMetricArrays.map((col2: number[]) => pearson(col1, col2))
+          );
         }
-        // Build filtered metric arrays, guaranteed to be number[]
-        const filteredMetricArrays: number[][] = metricArrays.map(arr => validIndices.map(i => arr[i] as number));
-        // Pearson correlation
-        function pearson(x: number[], y: number[]): number {
-          const n = x.length;
-          if (n === 0) return 0;
-          const meanX = x.reduce((a: number, b: number) => a + b, 0) / n;
-          const meanY = y.reduce((a: number, b: number) => a + b, 0) / n;
-          const num = x.reduce((sum: number, xi: number, i: number) => sum + (xi - meanX) * (y[i] - meanY), 0);
-          const denX = Math.sqrt(x.reduce((sum: number, xi: number) => sum + (xi - meanX) ** 2, 0));
-          const denY = Math.sqrt(y.reduce((sum: number, yi: number) => sum + (yi - meanY) ** 2, 0));
-          const den = denX * denY;
-          return den === 0 ? 0 : num / den;
-        }
-        // Build correlation matrix
-        const corrMatrix: number[][] = filteredMetricArrays.map((col1: number[]) =>
-          filteredMetricArrays.map((col2: number[]) => pearson(col1, col2))
-        );
 
         return (
           <div style={{margin: '16px 0'}}>
@@ -1453,48 +1412,6 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           </div>
         );
       })()}
-
-      {/* Correlation matrix controls and display */}
-      <div style={{ margin: '2em 0', padding: '1em', background: 'var(--color-bg-alt)', borderRadius: '8px' }}>
-        <h3>Correlation Matrix of Metrics</h3>
-        <label>
-          Number of sentences (1-205):
-          <input
-            type="number"
-            min={1}
-            max={205}
-            value={corrSentenceCount}
-            onChange={e => setCorrSentenceCount(Number(e.target.value))}
-            style={{ marginLeft: '1em', width: '5em' }}
-          />
-        </label>
-        {corrMatrix && (
-          <div style={{ overflowX: 'auto', marginTop: '1em' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: '0.85em' }}>
-              <thead>
-                <tr>
-                  <th style={{ position: 'sticky', left: 0, background: 'var(--color-bg-alt)' }}>Metric</th>
-                  {metricNames.map((m, j) => (
-                    <th key={j} style={{ padding: '0.3em', borderBottom: '1px solid #ccc' }}>{m}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {metricNames.map((m, i) => (
-                  <tr key={i}>
-                    <td style={{ position: 'sticky', left: 0, background: 'var(--color-bg-alt)', fontWeight: 'bold', padding: '0.3em', borderRight: '1px solid #ccc' }}>{m}</td>
-                    {corrMatrix[i].map((v, j) => (
-                      <td key={j} style={{ padding: '0.3em', textAlign: 'right', background: i === j ? 'var(--color-surface)' : undefined }}>
-                        {isNaN(v) ? '' : v.toFixed(2)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
 
       {/* Word Attention Heatmap toggle and display moved to bottom */}
       <div style={{marginTop: 32, marginBottom: 16}}>

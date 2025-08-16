@@ -28,20 +28,40 @@ function App() {
 
 
   // Sentence selection state
-  const [selectedSentenceIdx, setSelectedSentenceIdx] = useState(0);
+  const [selectedSentenceIdxs, setSelectedSentenceIdxs] = useState<number[]>([0]);
 
 
   // Get current sentence data from realData
-  const sentenceData = realData && realData.length > 0 ? realData[selectedSentenceIdx] : null;
-  const words = sentenceData ? sentenceData.words.map((w: any) => w.word) : [];
-  const datasetEffort = sentenceData ? (sentenceData.words.map((w: any) => w.effort ?? 0)) : [];
+  const selectedSentences = realData && realData.length > 0 ? selectedSentenceIdxs.map(idx => realData[idx]) : [];
+  const aggregateWords = selectedSentences.length > 0 ? selectedSentences[0].words.map((w: any) => w.word) : [];
+  const aggregateMetric = (key: string): number[] => {
+    if (selectedSentences.length === 0) return [];
+    const arrs = selectedSentences.map(s => s.words.map((w: any) => w[key] ?? 0));
+    return arrs[0].map((_: number, i: number) => arrs.map((a: number[]) => a[i]).reduce((sum: number, v: number) => sum + v, 0) / arrs.length);
+  };
+  const aggregateAttention = (): number[][] => {
+    if (
+      selectedSentences.length === 0 ||
+      selectedSentences.some(s => !Array.isArray(s.attention)) ||
+      !Array.isArray(selectedSentences[0].attention)
+    ) return [];
+    const arrs = selectedSentences.map(s => s.attention);
+    if (arrs.length === 0 || !Array.isArray(arrs[0])) return [];
+    return arrs[0].map((row: number[], i: number) =>
+      row.map((_: number, j: number) => arrs.map((a: number[][]) => (a[i] && a[i][j] !== undefined ? a[i][j] : 0)).reduce((sum: number, v: number) => sum + v, 0) / arrs.length)
+    );
+  };
+  const aggregateFFN = aggregateMetric('ffn_activations');
+  const aggregateProb = aggregateMetric('probabilities');
+  const aggregateBenefit = aggregateMetric('benefit');
+  const aggregateProvisionQuality = aggregateMetric('provisionQuality');
 
   // Always use dataset sentence for visualization
   useEffect(() => {
-    if (sentenceData && sentenceData.sentence) {
-      setInput(sentenceData.sentence);
+    if (selectedSentences.length > 0 && selectedSentences[0].sentence) {
+      setInput(selectedSentences[0].sentence);
     }
-  }, [selectedSentenceIdx]);
+  }, [selectedSentenceIdxs]);
 
 
 
@@ -284,7 +304,7 @@ function App() {
                 punctuationIndices={displayWords.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1)}
                 probabilities={displayProbabilities}
                 ffnActivations={displayFFNActivations}
-                sentence={sentenceData ? sentenceData.sentence : ''}
+                sentence={selectedSentences.map(s => s.sentence).join(' | ')}
                 benefit={benefit}
                 provisionQuality={provisionQuality}
               />
@@ -295,9 +315,6 @@ function App() {
                   provisionQuality={provisionQuality}
                   effort={effort}
                 />
-// ...existing code...
-// ...existing code...
-// ...existing code...
               )}
             </>
           ) : attentionError ? (
@@ -309,19 +326,59 @@ function App() {
       )}
       {/* Sentence selector */}
       <div style={{ margin: '1em 0' }}>
-        <label htmlFor="sentence-select">Select sentence from dataset: </label>
+        <label htmlFor="sentence-select">Select sentence(s) from dataset: </label>
         <select
           id="sentence-select"
-          value={selectedSentenceIdx}
-          onChange={e => setSelectedSentenceIdx(Number(e.target.value))}
+          multiple
+          value={selectedSentenceIdxs.map(String)}
+          onChange={e => {
+            const options = Array.from(e.target.selectedOptions).map(opt => Number(opt.value));
+            setSelectedSentenceIdxs(options.length ? options : [0]);
+          }}
+          style={{ minWidth: 300, height: 120 }}
         >
           {realData.map((s: any, i: number) => (
             <option key={i} value={i}>{s.sentence}</option>
           ))}
         </select>
+        <div style={{ fontSize: '0.8em', color: '#888', marginTop: 4 }}>
+          Hold Ctrl (Windows) or Cmd (Mac) to select multiple sentences.
+        </div>
       </div>
       {/* Pass selected sentence data to visualizations */}
       {/* Remove broken and duplicate TextMetricHeatmap usage */}
+      {aggregateWords.length > 0 && aggregateAttention().length > 0 ? (
+        <>
+          <AttentionHeatmap 
+            words={aggregateWords} 
+            attention={aggregateAttention()} 
+            selectedTokenIndices={selectedTokenIndices}
+            setSelectedTokenIndices={setSelectedTokenIndices}
+            unknownTokenIndices={unknownTokenIndices}
+            knownTokenIndices={knownTokenIndices}
+            setUnknownTokenIndices={setUnknownTokenIndices}
+            setKnownTokenIndices={setKnownTokenIndices}
+        punctuationIndices={aggregateWords.map((word: string, i: number) => isPunctuation(word) ? i : -1).filter((i: number) => i !== -1)}
+            probabilities={aggregateProb}
+            ffnActivations={aggregateFFN}
+            sentence={selectedSentences.map(s => s.sentence).join(' | ')}
+            benefit={aggregateBenefit}
+            provisionQuality={aggregateProvisionQuality}
+          />
+          {aggregateBenefit.length > 0 && (
+            <ComprehensionScoreboard
+              words={aggregateWords}
+              benefit={aggregateBenefit}
+              provisionQuality={aggregateProvisionQuality}
+              effort={effort}
+            />
+          )}
+        </>
+      ) : attentionError ? (
+        <div style={{color: '#00AAFF', fontSize: '0.9em'}}>{attentionError}</div>
+      ) : (
+        <div style={{color: '#888', fontSize: '0.9em'}}>No data</div>
+      )}
     </div>
   )
 }

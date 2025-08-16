@@ -3,7 +3,7 @@ import './App.css';
 import AttentionHeatmap from './AttentionHeatmap';
 import { computeComprehension } from './utils/computeComprehension';
 import ComprehensionScoreboard from './ComprehensionScoreboard';
-import CorrelationPanel from './CorrelationPanel';
+// ...existing code...
 
 // Remove: import realData from '../public/data/data.js';
 declare const realData: any[];
@@ -411,9 +411,9 @@ function App() {
                   provisionQuality={provisionQuality}
                   effort={effort}
                 />
-              )}
-              {effort.length > 0 && (
-                <CorrelationPanel words={displayWords} effort={effort} />
+// ...existing code...
+// ...existing code...
+// ...existing code...
               )}
             </>
           ) : attentionError ? (

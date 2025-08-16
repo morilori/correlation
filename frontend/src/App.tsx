@@ -26,9 +26,6 @@ function App() {
   const [allGroupsData, setAllGroupsData] = useState<{words: string[], attention: number[][], ffnActivations?: number[], probabilities?: number[]}[]>([]);
   // OneStop integration removed: onestop metadata/state no longer used
 
-  // Dynamic probabilities for Meaning Recall (updated when known/unknown words change)
-  const [dynamicProbabilities, setDynamicProbabilities] = useState<number[]>([]);
-  const [originalProbabilities, setOriginalProbabilities] = useState<number[]>([]);
 
   // Sentence selection state
   const [selectedSentenceIdx, setSelectedSentenceIdx] = useState(0);
@@ -46,122 +43,10 @@ function App() {
     }
   }, [selectedSentenceIdx]);
 
-  // Fetch dynamic probabilities for Meaning Recall when known/unknown indices change
-  useEffect(() => {
-    if (!input.trim() || !attentionData) return;
-    const fetchDynamicProbabilities = async () => {
-      try {
-        // Calculate the modified attention matrix based on known/unknown words
-        // This mirrors the logic in AttentionHeatmap for consistency
-        let modifiedAttention = attentionData.attention.map(row => [...row]); // Deep copy
-        
-        // Apply unknown word logic: unknown words don't provide attention
-        unknownTokenIndices.forEach(unknownIdx => {
-          if (unknownIdx < modifiedAttention.length) {
-            modifiedAttention[unknownIdx] = modifiedAttention[unknownIdx].map(() => 0);
-          }
-        });
-        
-        // Apply known word boosts
-        if (knownTokenIndices && knownTokenIndices.length > 0) {
-          // Compute original received attention
-          const originalReceived = attentionData.words.map((_, i) => 
-            attentionData.attention.reduce((sum, row) => sum + row[i], 0)
-          );
-          
-          // Filter out punctuation for normalization
-          const punctuationIndices = attentionData.words.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1);
-          const nonPunctuationOriginalReceived = originalReceived.filter((_, i) => !punctuationIndices.includes(i));
-          const originalMinReceived = nonPunctuationOriginalReceived.length > 0 ? Math.min(...nonPunctuationOriginalReceived) : 0;
-          const originalMaxReceived = nonPunctuationOriginalReceived.length > 0 ? Math.max(...nonPunctuationOriginalReceived) : 1;
-          
-          // Calculate current received attention from modified matrix
-          const currentReceived = attentionData.words.map((_, i) => 
-            modifiedAttention.reduce((sum, row) => sum + row[i], 0)
-          );
-          
-          // Calculate normalized received attention
-          const normReceived = currentReceived.map((v, i) => 
-            punctuationIndices.includes(i)
-              ? 0
-              : (originalMaxReceived - originalMinReceived ? (v - originalMinReceived) / (originalMaxReceived - originalMinReceived) : 0)
-          );
-          
-          // Apply known word boost: set normReceived to 1 and boost providers
-          knownTokenIndices.forEach(iKnown => {
-            const prevNormReceived = normReceived[iKnown];
-            const boost = 1 - prevNormReceived;
-            console.log(`Known word ${iKnown}: prevNormReceived=${prevNormReceived.toFixed(3)}, boost=${boost.toFixed(3)}`);
-            
-            if (boost > 0) {
-              // Find total attention given to this known word from the modified matrix
-              const totalAttentionToKnown = modifiedAttention.reduce((sum, row) => sum + row[iKnown], 0);
-              
-              if (totalAttentionToKnown > 0) {
-                // Boost attention from providers proportionally
-                modifiedAttention.forEach((row, j) => {
-                  if (j !== iKnown && row[iKnown] > 0) {
-                    const prop = row[iKnown] / totalAttentionToKnown;
-                    const attentionBoost = prop * boost * (originalMaxReceived - originalMinReceived);
-                    modifiedAttention[j][iKnown] += attentionBoost;
-                  }
-                });
-              }
-            }
-          });
-        }
 
-        // Only send custom attention mask if there are actual modifications
-        const hasModifications = (knownTokenIndices && knownTokenIndices.length > 0) || (unknownTokenIndices && unknownTokenIndices.length > 0);
-        const requestBody: any = {
-          text: input,
-          known_indices: knownTokenIndices,
-          unknown_indices: unknownTokenIndices,
-        };
-        
-        // Only include custom_attention_mask if there are modifications
-        if (hasModifications) {
-          requestBody.custom_attention_mask = modifiedAttention;
-          console.log('Sending custom attention mask for known/unknown words:', {
-            knownTokenIndices,
-            unknownTokenIndices,
-            modifiedAttentionSample: modifiedAttention.slice(0, 3).map(row => row.slice(0, 3))
-          });
-        }
 
-        // Fetch current probabilities using the modified attention matrix (only if modifications exist)
-        const res = await fetch('http://localhost:8000/prediction-probabilities', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-        });
-        if (!res.ok) throw new Error('Failed to fetch dynamic probabilities');
-        const data = await res.json();
-        setDynamicProbabilities(data.probabilities);
-        console.log('Received dynamic probabilities:', data.probabilities.slice(0, 5));
 
-        // Fetch original probabilities (no known/unknown changes)
-        const resOrig = await fetch('http://localhost:8000/prediction-probabilities', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: input,
-            known_indices: [],
-            unknown_indices: [],
-          }),
-        });
-        if (!resOrig.ok) throw new Error('Failed to fetch original probabilities');
-        const dataOrig = await resOrig.json();
-        setOriginalProbabilities(dataOrig.probabilities);
-        console.log('Received original probabilities:', dataOrig.probabilities.slice(0, 5));
-      } catch (e) {
-        console.error('Error fetching dynamic probabilities:', e);
-        setDynamicProbabilities([]);
-        setOriginalProbabilities([]);
-      }
-    };
-    fetchDynamicProbabilities();
-  }, [input, knownTokenIndices, unknownTokenIndices, attentionData]);
+  // ...existing code...
 
 
 
@@ -397,8 +282,7 @@ function App() {
                 setUnknownTokenIndices={setUnknownTokenIndices}
                 setKnownTokenIndices={setKnownTokenIndices}
                 punctuationIndices={displayWords.map((word, i) => isPunctuation(word) ? i : -1).filter(i => i !== -1)}
-                probabilities={dynamicProbabilities.length > 0 ? dynamicProbabilities : displayProbabilities}
-                originalProbabilities={originalProbabilities}
+                probabilities={displayProbabilities}
                 ffnActivations={displayFFNActivations}
                 sentence={sentenceData ? sentenceData.sentence : ''}
                 benefit={benefit}

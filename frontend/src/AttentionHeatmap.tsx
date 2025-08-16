@@ -18,6 +18,8 @@ interface AttentionHeatmapProps {
   originalProbabilities?: number[]; // Original BERT prediction probabilities (before known/unknown changes)
   ffnActivations?: number[]; // FFN activation counts for each word
   sentence?: string; // The original sentence string for matching dataset metrics
+  benefit?: number[];
+  provisionQuality?: number[];
 }
 
 const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({ 
@@ -33,7 +35,9 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
   probabilities = [], // Probabilities for Meaning Recall
   originalProbabilities = [], // Original probabilities for delta calculation
   ffnActivations = [],
-  sentence = ''
+  sentence = '',
+  benefit = [],
+  provisionQuality = []
 }) => {
   // Define datasetMetrics at the very top so it is available everywhere
   const datasetMetrics = [
@@ -1130,6 +1134,68 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
             datasetSeries[key] = match.words.map((w: any) => typeof w[key] === 'number' ? w[key] : null);
           }
         }
+        // Compute integration, contribution, effort, benefit, and provisionQuality metrics
+        // Integration: sum of attention received from all other words
+        const rawIntegration = metrics.map((_, i) => displayAttention.reduce((sum, row) => sum + row[i], 0));
+        // Contribution: sum of attention provided to all other words
+        const rawContribution = metrics.map((_, i) => displayAttention[i].reduce((sum, v) => sum + v, 0));
+        // Effort: use normSum (already computed)
+        const rawEffort = metrics.map(m => m.normSum);
+
+        // Benefit and provisionQuality from comprehension scores (if available)
+        const rawBenefit: number[] = benefit.length === metrics.length ? benefit : new Array(metrics.length).fill(0);
+        const rawProvisionQuality: number[] = provisionQuality.length === metrics.length ? provisionQuality : new Array(metrics.length).fill(0);
+
+        // Normalize integration
+        const nonPuncIntegration = rawIntegration.filter((_: number, i: number) => !punctuationIndices.includes(i));
+        const minIntegration = nonPuncIntegration.length > 0 ? Math.min(...nonPuncIntegration) : 0;
+        const maxIntegration = nonPuncIntegration.length > 0 ? Math.max(...nonPuncIntegration) : 1;
+        const integration = rawIntegration.map((v: number, i: number) =>
+          punctuationIndices.includes(i)
+            ? 0
+            : (maxIntegration - minIntegration ? (v - minIntegration) / (maxIntegration - minIntegration) : 0)
+        );
+
+        // Normalize contribution
+        const nonPuncContribution = rawContribution.filter((_: number, i: number) => !punctuationIndices.includes(i));
+        const minContribution = nonPuncContribution.length > 0 ? Math.min(...nonPuncContribution) : 0;
+        const maxContribution = nonPuncContribution.length > 0 ? Math.max(...nonPuncContribution) : 1;
+        const contribution = rawContribution.map((v: number, i: number) =>
+          punctuationIndices.includes(i)
+            ? 0
+            : (maxContribution - minContribution ? (v - minContribution) / (maxContribution - minContribution) : 0)
+        );
+
+        // Normalize effort
+        const nonPuncEffort = rawEffort.filter((_: number, i: number) => !punctuationIndices.includes(i));
+        const minEffort = nonPuncEffort.length > 0 ? Math.min(...nonPuncEffort) : 0;
+        const maxEffort = nonPuncEffort.length > 0 ? Math.max(...nonPuncEffort) : 1;
+        const effort = rawEffort.map((v: number, i: number) =>
+          punctuationIndices.includes(i)
+            ? 0
+            : (maxEffort - minEffort ? (v - minEffort) / (maxEffort - minEffort) : 0)
+        );
+
+        // Normalize benefit
+        const nonPuncBenefit = rawBenefit.filter((_: number, i: number) => !punctuationIndices.includes(i));
+        const minBenefit = nonPuncBenefit.length > 0 ? Math.min(...nonPuncBenefit) : 0;
+        const maxBenefit = nonPuncBenefit.length > 0 ? Math.max(...nonPuncBenefit) : 1;
+        const benefitNorm = rawBenefit.map((v: number, i: number) =>
+          punctuationIndices.includes(i)
+            ? 0
+            : (maxBenefit - minBenefit ? (v - minBenefit) / (maxBenefit - minBenefit) : 0)
+        );
+
+        // Normalize provisionQuality
+        const nonPuncProvisionQuality = rawProvisionQuality.filter((_: number, i: number) => !punctuationIndices.includes(i));
+        const minProvisionQuality = nonPuncProvisionQuality.length > 0 ? Math.min(...nonPuncProvisionQuality) : 0;
+        const maxProvisionQuality = nonPuncProvisionQuality.length > 0 ? Math.max(...nonPuncProvisionQuality) : 1;
+        const provisionQualityNorm = rawProvisionQuality.map((v: number, i: number) =>
+          punctuationIndices.includes(i)
+            ? 0
+            : (maxProvisionQuality - minProvisionQuality ? (v - minProvisionQuality) / (maxProvisionQuality - minProvisionQuality) : 0)
+        );
+
         // Add computed metrics
         const computedMetrics = {
           normSum: metrics.map(m => m.normSum),
@@ -1137,6 +1203,11 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           normProvided: metrics.map(m => m.normProvided),
           normRetrieved: metrics.map(m => m.normRetrieved),
           normRecalled: metrics.map(m => m.normRecalled),
+          integration,
+          contribution,
+          effort,
+          benefit: benefitNorm,
+          provisionQuality: provisionQualityNorm,
         };
         const allMetricKeys = [...datasetMetricKeys, ...Object.keys(computedMetrics)];
         const allSeries: Record<string, (number|null)[]> = { ...datasetSeries, ...computedMetrics };
@@ -1165,11 +1236,49 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
           );
         }
 
+
+        // --- Correlation Matrix for all metrics ---
+        const correlationMetricKeys: string[] = allMetricKeys;
+        // Align all metric arrays by filtering out indices where any metric is missing/null/NaN
+        const metricArrays: number[][] = correlationMetricKeys.map((key: string) => (allSeries[key] || []).map((v: number | null) => typeof v === 'number' && !isNaN(v) ? v : null));
+        // Find indices where all metrics are valid (no nulls)
+        const validIndices: number[] = [];
+        if (metricArrays.length > 0) {
+          for (let i = 0; i < metricArrays[0].length; i++) {
+            let allValid = true;
+            for (let arr of metricArrays) {
+              if (arr[i] == null) {
+                allValid = false;
+                break;
+              }
+            }
+            if (allValid) validIndices.push(i);
+          }
+        }
+        // Build filtered metric arrays, guaranteed to be number[]
+        const filteredMetricArrays: number[][] = metricArrays.map(arr => validIndices.map(i => arr[i] as number));
+        // Pearson correlation
+        function pearson(x: number[], y: number[]): number {
+          const n = x.length;
+          if (n === 0) return 0;
+          const meanX = x.reduce((a: number, b: number) => a + b, 0) / n;
+          const meanY = y.reduce((a: number, b: number) => a + b, 0) / n;
+          const num = x.reduce((sum: number, xi: number, i: number) => sum + (xi - meanX) * (y[i] - meanY), 0);
+          const denX = Math.sqrt(x.reduce((sum: number, xi: number) => sum + (xi - meanX) ** 2, 0));
+          const denY = Math.sqrt(y.reduce((sum: number, yi: number) => sum + (yi - meanY) ** 2, 0));
+          const den = denX * denY;
+          return den === 0 ? 0 : num / den;
+        }
+        // Build correlation matrix
+        const corrMatrix: number[][] = filteredMetricArrays.map((col1: number[]) =>
+          filteredMetricArrays.map((col2: number[]) => pearson(col1, col2))
+        );
+
         return (
           <div style={{margin: '16px 0'}}>
             <label style={{marginRight: 8}}>Color text by metric:</label>
             <select value={selectedMetric} onChange={e => setSelectedMetric(e.target.value)} style={{fontSize: 13, padding: '2px 6px'}}>
-              {allMetricKeys.map(key => (
+              {allMetricKeys.map((key: string) => (
                 <option key={key} value={key}>{key}</option>
               ))}
             </select>
@@ -1213,6 +1322,31 @@ const AttentionHeatmap: React.FC<AttentionHeatmapProps> = ({
                   );
                 })}
               </div>
+            </div>
+            <div style={{marginTop: 32}}>
+              <b>Correlation Matrix (Pearson r) for All Metrics</b>
+              <table style={{borderCollapse: 'collapse', marginTop: 8, fontSize: '0.95em', background: '#f8f8f8', borderRadius: 8}}>
+                <thead>
+                  <tr>
+                    <th style={{padding: '4px 8px', background: '#e0e0e0'}}></th>
+                    {correlationMetricKeys.map((key: string, j: number) => (
+                      <th key={j} style={{padding: '4px 8px', background: '#e0e0e0'}}>{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {corrMatrix.map((row: number[], i: number) => (
+                    <tr key={i}>
+                      <th style={{padding: '4px 8px', background: '#e0e0e0'}}>{correlationMetricKeys[i]}</th>
+                      {row.map((val: number, j: number) => (
+                        <td key={j} style={{padding: '4px 8px', textAlign: 'center', background: i === j ? '#e6f7ff' : '#fff', color: Math.abs(val) > 0.7 ? '#0072B2' : '#333'}}>
+                          {val.toFixed(2)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         );

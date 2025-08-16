@@ -401,6 +401,8 @@ function App() {
                 originalProbabilities={originalProbabilities}
                 ffnActivations={displayFFNActivations}
                 sentence={sentenceData ? sentenceData.sentence : ''}
+                benefit={benefit}
+                provisionQuality={provisionQuality}
               />
               {benefit.length > 0 && (
                 <ComprehensionScoreboard
